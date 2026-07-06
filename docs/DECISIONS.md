@@ -3,6 +3,64 @@
 Judgment calls made during the v2 upgrade, and known issues found along the way.
 Newest first within each task.
 
+## Task 3 — Auth hardening
+
+**Rate limiting: hand-rolled in-memory sliding window, not slowapi.** The task
+allowed either. A dependency wasn't worth it for ~30 lines of logic
+(`app/rate_limit.py`), and it keeps faith with the existing architecture note
+that auth has zero heavyweight dependencies. Limits: 5 login attempts/minute/IP
+(brute-force guard) and 5 registrations/hour/IP (signup-spam guard), keyed on
+`request.client.host`. Known limitation: this is per-process, in-memory state —
+it resets on restart and isn't shared across multiple backend workers/replicas.
+Fine for the current single-process deployment; a multi-instance deployment
+would need a shared store (Redis) instead. Tests reset both limiters in the
+`fresh_db` autouse fixture, the same way the DB itself is reset per test —
+otherwise ~25 tests sharing one `TestClient` (and therefore one source IP)
+would trip each other's rate limits.
+
+**`JWT_SECRET` production guard lives in `config.py`, checked at import time.**
+Added an `ENV` setting (default `development`). When `ENV=production` and
+`JWT_SECRET` is still the shipped default, `app.config` raises `RuntimeError`
+immediately on import — before the app can serve a single request with a
+publicly-known secret. The check is factored into `_check_production_secret()`
+so it's unit-testable directly against a `Settings` instance, without needing
+to reimport the whole app under different env vars.
+
+**Frontend token-expiry: decode `exp` client-side to prevent a flash, but the
+server stays the real authority.** Two changes to `lib/api.js` /
+`App.jsx`: (1) `auth.isValid()` decodes the JWT's `exp` claim (no library,
+no signature check — just informs the UI) so the `Protected` route can
+redirect to `/login` *before* ever mounting a page or firing a doomed API call
+against an already-expired token. (2) On a live 401 mid-session, `api()` now
+returns a promise that never settles instead of throwing, because a
+`window.location.href` redirect is already underway; letting the calling
+page's `.catch()` run first would flash "Session expired" in the UI for a
+frame before navigation actually happens. If JWT decoding fails for any reason
+(malformed token), `isValid()` treats it as valid rather than expired — the
+server-side 401 path still catches genuinely bad tokens, so failing open here
+only risks one extra round trip, not a security gap.
+
+**localStorage tokens, XSS tradeoff (kept as-is, not fixed this task).**
+Tokens still live in `localStorage`, readable by any JS running on the page.
+The task explicitly asked to document this rather than fix it now. Risk: if
+the frontend ever ships a script-injection bug, the attacker's script can read
+the token directly (no `dangerouslySetInnerHTML` exists in the codebase today
+— grepped to confirm — so there's no known vector, but the tradeoff exists
+independent of current code). The safer alternative is an httpOnly,
+`SameSite=Strict` cookie, which JS can't read at all — but that requires CSRF
+protection (cookies ride along on any cross-site request automatically,
+tokens in headers don't) and changes the auth flow enough that it's a
+separate, deliberate migration rather than a drive-by fix alongside rate
+limiting and the JWT-secret check.
+
+### Known issues found (not yet fixed)
+
+- Rate limiting is IP-keyed only; a login limiter shared across users behind
+  one NAT/proxy could let one noisy client lock out others on the same IP.
+  Acceptable for a self-hosted small-business app (task explicitly asked for
+  "simple"), but worth revisiting if Keel is ever deployed multi-tenant behind
+  a shared egress IP (e.g. corporate VPN).
+
 ## Task 2 — Alembic migrations
 
 **Two migrations, not one.** `alembic/versions/d3fc1e4ef268_baseline_schema.py`

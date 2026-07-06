@@ -100,9 +100,15 @@ Copy `backend/.env.example` to `backend/.env`:
 
 | Variable | Default | Notes |
 |----------|---------|-------|
+| `ENV` | `development` | Set to `production` to enable production checks (see below) |
 | `DATABASE_URL` | `sqlite:///./keel.db` | Any SQLAlchemy URL, e.g. `postgresql+psycopg://...` |
 | `JWT_SECRET` | change me | **Set a long random string in production** |
 | `CORS_ORIGINS` | `http://localhost:5173` | Comma-separated list |
+
+With `ENV=production`, the app refuses to start if `JWT_SECRET` is still the
+default placeholder value, instead of silently running with a publicly-known
+secret. Login and registration are also rate-limited (5/minute and 5/hour per
+IP, respectively) to slow down brute-force and signup-spam attempts.
 
 ## API overview
 

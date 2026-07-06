@@ -10,12 +10,15 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.database import Base, engine
+from app.rate_limit import login_limiter, register_limiter
 
 
 @pytest.fixture(autouse=True)
 def fresh_db():
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
+    login_limiter.reset()
+    register_limiter.reset()
     yield
 
 
@@ -115,6 +118,23 @@ def test_forecast_shape(client, auth):
     for p in f:
         assert p["lower"] <= p["projected_revenue"] <= p["upper"]
         assert p["projected_revenue"] >= 0
+
+
+def test_login_rate_limited_after_five_attempts(client, auth):
+    for _ in range(5):
+        r = client.post("/api/auth/login", json={"email": "owner@example.com", "password": "wrong"})
+        assert r.status_code == 401
+    r = client.post("/api/auth/login", json={"email": "owner@example.com", "password": "wrong"})
+    assert r.status_code == 429
+
+
+def test_register_rate_limited_after_five_attempts(client):
+    for i in range(5):
+        r = client.post("/api/auth/register", json={
+            "email": f"user{i}@example.com", "password": "supersecret1"})
+        assert r.status_code == 201
+    r = client.post("/api/auth/register", json={"email": "one-more@example.com", "password": "supersecret1"})
+    assert r.status_code == 429
 
 
 def test_money_sums_without_float_drift(client, auth):

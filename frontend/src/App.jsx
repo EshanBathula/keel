@@ -10,7 +10,11 @@ import Forecast from './pages/Forecast.jsx'
 import Insights from './pages/Insights.jsx'
 
 function Protected({ children }) {
-  return auth.token() ? children : <Navigate to="/login" replace />
+  if (!auth.isValid()) {
+    auth.clear()
+    return <Navigate to="/login" replace />
+  }
+  return children
 }
 
 export default function App() {

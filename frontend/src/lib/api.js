@@ -1,9 +1,28 @@
 const TOKEN_KEY = 'keel_token'
 const USER_KEY = 'keel_user'
 
+// Decode a JWT's `exp` (seconds since epoch) without a library or signature
+// verification — this only informs the UI whether to bother calling the API;
+// the server is always the real authority on whether a token is valid.
+function tokenExpiryMs(token) {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+    return typeof payload.exp === 'number' ? payload.exp * 1000 : null
+  } catch {
+    return null
+  }
+}
+
 export const auth = {
   token: () => localStorage.getItem(TOKEN_KEY),
   user: () => JSON.parse(localStorage.getItem(USER_KEY) || 'null'),
+  // True only for a present, structurally-decodable, unexpired token.
+  isValid() {
+    const token = localStorage.getItem(TOKEN_KEY)
+    if (!token) return false
+    const expMs = tokenExpiryMs(token)
+    return expMs == null || expMs > Date.now()
+  },
   set(token, user) {
     localStorage.setItem(TOKEN_KEY, token)
     localStorage.setItem(USER_KEY, JSON.stringify(user))
@@ -27,7 +46,9 @@ export async function api(path, { method = 'GET', body, formData } = {}) {
   if (res.status === 401) {
     auth.clear()
     window.location.href = '/login'
-    throw new Error('Session expired')
+    // Navigation is already underway — never settle so callers don't render
+    // an error flash for the instant before the browser leaves this page.
+    return new Promise(() => {})
   }
   if (!res.ok) {
     let detail = 'Request failed'
