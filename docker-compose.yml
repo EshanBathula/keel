@@ -1,0 +1,21 @@
+services:
+  backend:
+    build: ./backend
+    environment:
+      - DATABASE_URL=sqlite:////data/keel.db
+      - JWT_SECRET=${JWT_SECRET:-dev-only-secret-change-me}
+      - CORS_ORIGINS=http://localhost:5173
+    volumes:
+      - keel-data:/data
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+
+volumes:
+  keel-data:
