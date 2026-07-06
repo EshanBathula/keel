@@ -3,6 +3,35 @@
 Judgment calls made during the v2 upgrade, and known issues found along the way.
 Newest first within each task.
 
+## Task 2 — Alembic migrations
+
+**Two migrations, not one.** `alembic/versions/d3fc1e4ef268_baseline_schema.py`
+hand-recreates the schema exactly as it shipped in v1.0 (commit `8f69432`,
+`Float` amount columns) — this is the migration path anyone with a real v1.0
+database needs to start from. `18851eed2a8a_money_as_integer_cents.py` then
+applies Task 1's change as an actual reversible migration: add
+`amount_cents`, backfill it from `amount` using `app.money.to_cents` (the
+exact function the app uses, so the migration and the app can never disagree
+on rounding), then drop `amount`. `downgrade()` reverses it with
+`to_dollars`. A fresh clone runs both in sequence and ends up at the same
+schema `models.py` describes today — verified by running
+`alembic revision --autogenerate` against a freshly-migrated database and
+confirming it detects zero diff (empty migration generated, then discarded).
+
+**`render_as_batch=True`** is set in `alembic/env.py` for both online and
+offline migration contexts. SQLite can't `ALTER COLUMN` or `DROP COLUMN`
+directly — Alembic's batch mode works around this by rebuilding the table.
+Harmless for Postgres too, so it's left on unconditionally rather than
+branching on dialect.
+
+**`create_all()` removed from `main.py` and `seed.py`.** Only
+`backend/tests/test_api.py` still calls
+`Base.metadata.create_all()`/`drop_all()` directly, per the task's explicit
+carve-out — tests want a fast, fully-isolated schema per run, not a
+migration chain. Production/dev now rely on `alembic upgrade head`, which the
+Docker image runs automatically before starting uvicorn (see `Dockerfile`
+`CMD`).
+
 ## Task 1 — Money as integer cents
 
 **Storage & arithmetic: integer cents. Wire format: dollars.** `Transaction` and

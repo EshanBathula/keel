@@ -17,11 +17,12 @@
 
 ```
 backend/app/
-├── main.py          FastAPI app assembly, CORS, table creation
+├── main.py          FastAPI app assembly, CORS
 ├── config.py        Pydantic settings (env-overridable)
 ├── database.py      Engine/session, declarative base
 ├── auth.py          PBKDF2 hashing, JWT issue/verify, current-user dependency
 ├── models.py        User, Customer, Transaction, Invoice
+├── money.py         Dollar <-> integer-cents conversion (Decimal-based)
 ├── schemas.py       Request/response models
 ├── seed.py          Demo data generator (12 months, realistic seasonality)
 ├── routers/         Thin HTTP layer — validation + auth, no business logic
@@ -29,6 +30,8 @@ backend/app/
     ├── analytics.py   Monthly series, KPIs, health score, breakdowns
     ├── forecast.py    OLS trend + moving-average blend, confidence bands
     └── insights.py    Rule engine producing prioritized recommendations
+
+backend/alembic/     Schema migrations (see "Database migrations" in README)
 ```
 
 **Design decisions**

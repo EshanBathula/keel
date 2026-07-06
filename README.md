@@ -45,7 +45,9 @@ Where is cash going? What will next quarter look like? What should I do this wee
 docker compose up --build
 ```
 
-Frontend at http://localhost:5173, API docs at http://localhost:8000/docs.
+The backend container runs `alembic upgrade head` before starting the server,
+so the schema is always up to date. Frontend at http://localhost:5173, API
+docs at http://localhost:8000/docs.
 
 ### Option B — run locally
 
@@ -55,7 +57,8 @@ Frontend at http://localhost:5173, API docs at http://localhost:8000/docs.
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-python -m app.seed            # optional: demo account with 12 months of data
+alembic upgrade head           # create/upgrade the database schema
+python -m app.seed             # optional: demo account with 12 months of data
 uvicorn app.main:app --reload
 ```
 
@@ -75,6 +78,21 @@ Open http://localhost:5173. Demo login: **demo@keel.app / demopassword** (after 
 cd backend
 python -m pytest tests/ -v
 ```
+
+## Database migrations
+
+Schema changes are managed with [Alembic](https://alembic.sqlalchemy.org/).
+`app.main` no longer calls `create_all()` — only the pytest suite does, for
+speed and isolation.
+
+```bash
+cd backend
+alembic upgrade head                       # apply all pending migrations
+alembic revision --autogenerate -m "..."   # generate a new migration from model changes
+```
+
+`alembic/env.py` reads `DATABASE_URL` from the same app settings as the
+server, so it targets whatever database the app is configured to use.
 
 ## Configuration
 

@@ -1,13 +1,13 @@
 """Seed a demo account with 12 months of realistic data.
 
-Run:  python -m app.seed
+Run (after `alembic upgrade head`):  python -m app.seed
 Login: demo@keel.app / demopassword
 """
 import random
 from datetime import date, timedelta
 
 from .auth import hash_password
-from .database import Base, SessionLocal, engine
+from .database import SessionLocal
 from .models import Customer, Invoice, InvoiceStatus, Transaction, TxType, User
 
 random.seed(7)
@@ -19,7 +19,6 @@ EXPENSE_CATS = {"Payroll": 5200, "Rent": 1800, "Software": 420, "Marketing": 900
 
 
 def run():
-    Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
         existing = db.query(User).filter(User.email == "demo@keel.app").first()

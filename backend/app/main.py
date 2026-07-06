@@ -3,10 +3,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .database import Base, engine
 from .routers import auth, transactions, customers, invoices, analytics
 
-Base.metadata.create_all(bind=engine)
+# Schema is managed by Alembic (`alembic upgrade head`), not create_all() —
+# see docs/DECISIONS.md. Tests are the one exception (Base.metadata.create_all
+# directly, for speed and isolation).
 
 app = FastAPI(
     title=settings.app_name,
