@@ -117,6 +117,24 @@ def test_forecast_shape(client, auth):
         assert p["projected_revenue"] >= 0
 
 
+def test_money_sums_without_float_drift(client, auth):
+    # 0.10 + 0.20 + 0.30 famously equals 0.6000000000000001 in binary floats.
+    # With cents storage the sum must land on exactly 0.6.
+    for amt in (0.10, 0.20, 0.30):
+        client.post("/api/transactions", headers=auth, json={
+            "type": "income", "amount": amt, "category": "Misc", "date": str(date.today())})
+    k = client.get("/api/analytics/kpis", headers=auth).json()
+    assert k["revenue_this_month"] == 0.6
+
+
+def test_transaction_amount_rounds_to_nearest_cent(client, auth):
+    r = client.post("/api/transactions", headers=auth, json={
+        "type": "income", "amount": 19.999999999998, "category": "Services",
+        "date": str(date.today())})
+    assert r.status_code == 201
+    assert r.json()["amount"] == 20.0
+
+
 def test_invoice_paid_creates_income(client, auth):
     c = client.post("/api/customers", headers=auth, json={"name": "Acme"}).json()
     inv = client.post("/api/invoices", headers=auth, json={

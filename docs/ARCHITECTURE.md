@@ -35,8 +35,10 @@ backend/app/
 
 - **Routers stay thin; services own logic.** Every analytic accepts a `Session` and
   `user_id`, so it can be tested or reused (CLI, background jobs) without FastAPI.
-- **Amounts are stored positive**; the `type` column determines sign. This keeps
-  aggregation code simple and prevents sign-error bugs.
+- **Amounts are stored positive, as integer cents** (`amount_cents`); the `type`
+  column determines sign. Storing cents instead of floats keeps aggregation
+  exact; a `.amount` property on the models converts to/from dollars so the
+  JSON API is unchanged. See `docs/DECISIONS.md`.
 - **Auth has zero heavyweight dependencies** — PBKDF2 from the standard library plus
   PyJWT. Swappable for OAuth later without touching routers (only the dependency).
 - **SQLite by default, PostgreSQL by env var.** The ORM layer is dialect-agnostic;

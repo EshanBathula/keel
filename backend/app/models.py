@@ -2,10 +2,11 @@
 import enum
 from datetime import datetime, date
 
-from sqlalchemy import String, Float, Date, DateTime, ForeignKey, Enum, Text
+from sqlalchemy import String, Integer, Date, DateTime, ForeignKey, Enum, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base
+from .money import to_cents, to_dollars
 
 
 class TxType(str, enum.Enum):
@@ -56,7 +57,7 @@ class Transaction(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"), nullable=True)
     type: Mapped[TxType] = mapped_column(Enum(TxType), index=True)
-    amount: Mapped[float] = mapped_column(Float)  # always positive; type determines sign
+    amount_cents: Mapped[int] = mapped_column(Integer)  # always positive; type determines sign
     category: Mapped[str] = mapped_column(String(100), index=True, default="Uncategorized")
     description: Mapped[str] = mapped_column(String(500), default="")
     date: Mapped[date] = mapped_column(Date, index=True)
@@ -64,6 +65,15 @@ class Transaction(Base):
 
     user: Mapped["User"] = relationship(back_populates="transactions")
     customer: Mapped["Customer | None"] = relationship(back_populates="transactions")
+
+    @property
+    def amount(self) -> float:
+        """Dollar view of amount_cents, for schemas and call sites built around dollars."""
+        return to_dollars(self.amount_cents)
+
+    @amount.setter
+    def amount(self, dollars) -> None:
+        self.amount_cents = to_cents(dollars)
 
 
 class Invoice(Base):
@@ -73,7 +83,7 @@ class Invoice(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"), nullable=True)
     number: Mapped[str] = mapped_column(String(50))
-    amount: Mapped[float] = mapped_column(Float)
+    amount_cents: Mapped[int] = mapped_column(Integer)
     status: Mapped[InvoiceStatus] = mapped_column(Enum(InvoiceStatus), default=InvoiceStatus.draft, index=True)
     issue_date: Mapped[date] = mapped_column(Date)
     due_date: Mapped[date] = mapped_column(Date)
@@ -81,3 +91,11 @@ class Invoice(Base):
 
     user: Mapped["User"] = relationship(back_populates="invoices")
     customer: Mapped["Customer | None"] = relationship(back_populates="invoices")
+
+    @property
+    def amount(self) -> float:
+        return to_dollars(self.amount_cents)
+
+    @amount.setter
+    def amount(self, dollars) -> None:
+        self.amount_cents = to_cents(dollars)

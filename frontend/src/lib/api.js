@@ -38,6 +38,10 @@ export async function api(path, { method = 'GET', body, formData } = {}) {
   return res.json()
 }
 
+// Collapse float input noise (e.g. 19.999999999998) to the nearest cent before
+// it reaches the API, which stores and computes in integer cents.
+export const roundToCents = (n) => Math.round(n * 100) / 100
+
 export const fmtMoney = (n) =>
   n == null ? '—' : n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
 

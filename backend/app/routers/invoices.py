@@ -46,13 +46,15 @@ def update_invoice(invoice_id: int, payload: InvoiceUpdate, db: Session = Depend
         raise HTTPException(404, "Invoice not found")
     previously_paid = inv.status == InvoiceStatus.paid
     inv.status = payload.status
-    # Marking paid records the revenue automatically.
+    # Marking paid records the revenue automatically. Copy amount_cents directly
+    # (not via the dollar `amount` property) to avoid a needless round trip.
     if payload.status == InvoiceStatus.paid and not previously_paid:
-        db.add(Transaction(
+        tx = Transaction(
             user_id=user.id, customer_id=inv.customer_id, type=TxType.income,
-            amount=inv.amount, category="Invoice payment",
-            description=f"Invoice {inv.number} paid", date=date.today(),
-        ))
+            category="Invoice payment", description=f"Invoice {inv.number} paid", date=date.today(),
+        )
+        tx.amount_cents = inv.amount_cents
+        db.add(tx)
     db.commit()
     db.refresh(inv)
     return inv

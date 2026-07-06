@@ -8,7 +8,8 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
-from .analytics import monthly_series, shift_month
+from .analytics import monthly_series_cents, shift_month
+from ..money import to_dollars
 
 
 def _ols(values: list[float]) -> tuple[float, float]:
@@ -34,8 +35,8 @@ def _residual_std(values: list[float], slope: float, intercept: float) -> float:
     return (sum(resid) / (n - 2)) ** 0.5
 
 
-def _project(values: list[float], horizon: int) -> list[tuple[float, float]]:
-    """Project `horizon` future values; returns [(point, band_halfwidth)]."""
+def _project(values: list[int], horizon: int) -> list[tuple[int, int]]:
+    """Project `horizon` future values (in cents); returns [(point_cents, band_halfwidth_cents)]."""
     slope, intercept = _ols(values)
     std = _residual_std(values, slope, intercept)
     ma = sum(values[-3:]) / len(values[-3:]) if values else 0.0
@@ -46,19 +47,19 @@ def _project(values: list[float], horizon: int) -> list[tuple[float, float]]:
         blended = 0.6 * trend + 0.4 * ma          # damp aggressive trends
         blended = max(blended, 0.0)               # revenue/expenses can't go negative
         band = 1.28 * std * (1 + h * 0.15)        # ~80% band, widening with horizon
-        out.append((round(blended, 2), round(band, 2)))
+        out.append((round(blended), round(band)))
     return out
 
 
 def forecast(db: Session, user_id: int, horizon: int = 6, today: date | None = None) -> list[dict]:
     today = today or date.today()
-    series = monthly_series(db, user_id, months=12, today=today)
+    series = monthly_series_cents(db, user_id, months=12, today=today)
     # Drop leading empty months so a young business isn't dragged toward zero.
-    while len(series) > 3 and series[0]["revenue"] == 0 and series[0]["expenses"] == 0:
+    while len(series) > 3 and series[0]["revenue_cents"] == 0 and series[0]["expenses_cents"] == 0:
         series.pop(0)
 
-    revenues = [p["revenue"] for p in series]
-    expenses = [p["expenses"] for p in series]
+    revenues = [p["revenue_cents"] for p in series]
+    expenses = [p["expenses_cents"] for p in series]
     rev_proj = _project(revenues, horizon)
     exp_proj = _project(expenses, horizon)
 
@@ -66,15 +67,15 @@ def forecast(db: Session, user_id: int, horizon: int = 6, today: date | None = N
     points = []
     for h in range(horizon):
         m = shift_month(last_month, h + 1)
-        r, r_band = rev_proj[h]
-        e, _ = exp_proj[h]
-        net = round(r - e, 2)
+        r_cents, r_band_cents = rev_proj[h]
+        e_cents, _ = exp_proj[h]
+        net_cents = r_cents - e_cents
         points.append({
             "month": m,
-            "projected_revenue": r,
-            "projected_expenses": e,
-            "projected_net": net,
-            "lower": round(max(r - r_band, 0.0), 2),
-            "upper": round(r + r_band, 2),
+            "projected_revenue": to_dollars(r_cents),
+            "projected_expenses": to_dollars(e_cents),
+            "projected_net": to_dollars(net_cents),
+            "lower": to_dollars(max(r_cents - r_band_cents, 0)),
+            "upper": to_dollars(r_cents + r_band_cents),
         })
     return points

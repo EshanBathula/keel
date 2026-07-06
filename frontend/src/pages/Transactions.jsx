@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { api, fmtMoney } from '../lib/api.js'
+import { api, fmtMoney, roundToCents } from '../lib/api.js'
 
 const emptyForm = () => ({
   type: 'income', amount: '', category: '', description: '',
@@ -29,7 +29,7 @@ export default function Transactions() {
         method: 'POST',
         body: {
           type: form.type,
-          amount: Number(form.amount),
+          amount: roundToCents(Number(form.amount)),
           category: form.category || 'Uncategorized',
           description: form.description,
           date: form.date,

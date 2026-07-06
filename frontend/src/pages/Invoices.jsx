@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, fmtMoney } from '../lib/api.js'
+import { api, fmtMoney, roundToCents } from '../lib/api.js'
 
 const today = () => new Date().toISOString().slice(0, 10)
 const plus30 = () => new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10)
@@ -23,7 +23,7 @@ export default function Invoices() {
     try {
       await api('/api/invoices', {
         method: 'POST',
-        body: { ...form, amount: Number(form.amount), customer_id: form.customer_id ? Number(form.customer_id) : null },
+        body: { ...form, amount: roundToCents(Number(form.amount)), customer_id: form.customer_id ? Number(form.customer_id) : null },
       })
       setForm({ number: '', amount: '', customer_id: '', issue_date: today(), due_date: plus30(), status: 'sent' })
       load()
