@@ -34,7 +34,7 @@ Where is cash going? What will next quarter look like? What should I do this wee
 | Backend  | Python 3.12, FastAPI, SQLAlchemy 2.0, SQLite (PostgreSQL-ready via `DATABASE_URL`) |
 | Frontend | React 18, Vite, Recharts, React Router |
 | Auth     | PyJWT + PBKDF2 (no external auth service required) |
-| Tests    | pytest, end-to-end against the API |
+| Tests    | pytest (backend, end-to-end against the API), Vitest + React Testing Library (frontend) |
 | Deploy   | Docker / docker-compose, or run each service directly |
 
 ## Quick start
@@ -77,6 +77,11 @@ Open http://localhost:5173. Demo login: **demo@keel.app / demopassword** (after 
 ```bash
 cd backend
 python -m pytest tests/ -v
+```
+
+```bash
+cd frontend
+npm test
 ```
 
 ## Database migrations

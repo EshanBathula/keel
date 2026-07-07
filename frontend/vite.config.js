@@ -6,4 +6,10 @@ export default defineConfig({
   server: {
     proxy: { '/api': 'http://localhost:8000' },
   },
+  test: {
+    environment: 'jsdom',
+    environmentOptions: { jsdom: { url: 'http://localhost:3000' } },
+    setupFiles: './src/test/setup.js',
+    globals: true,
+  },
 })

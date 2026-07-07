@@ -3,6 +3,44 @@
 Judgment calls made during the v2 upgrade, and known issues found along the way.
 Newest first within each task.
 
+## Task 7 — Frontend robustness
+
+**Two error boundaries, not one.** An outer one wraps the entire `<Routes>`
+tree (catches a crash in `Login` or `Shell` itself, before a user is even
+past the sidebar); an inner one wraps just the routed page content, `key`ed
+by `location.pathname`. The pathname key matters: without it, a boundary
+that's already tripped keeps rendering its own fallback UI forever, even
+after the user clicks to a different page, because React error boundaries
+don't re-run their child render just because the child *would* now succeed —
+they only reset via `key` (forcing a remount) or explicit state changes.
+Found this by reasoning through the failure mode, not by observing it broken
+first; verified by inspection of the `getDerivedStateFromError` contract, not
+a dedicated test (frontend test coverage this task focused on api.js and
+Forecast per the task's explicit list).
+
+**Vitest pinned to 2.x, not the latest 4.x.** `npm install -D vitest` grabbed
+4.1.10, whose peer dependency requires Vite 6/7/8 — this project pins Vite
+5. Rather than bump Vite (a bigger, riskier change with its own transitive
+fallout, unrelated to what this task asked for), pinned `vitest@^2.1.9`,
+which has no such constraint.
+
+**`localStorage` needed a manual polyfill in the test setup.** Node 22+
+ships an experimental global `localStorage` (a getter that warns and
+returns `undefined` without a `--localstorage-file` flag). Vitest's jsdom
+environment only overrides global keys from its own explicit whitelist, and
+`localStorage` isn't on it in this vitest version — so Node's broken stub
+wins over jsdom's real implementation, and `localStorage.clear()` throws
+"Cannot read properties of undefined" in every test, environment-specific
+and unrelated to application code. Fixed with a ~10-line in-memory
+`Storage`-shaped polyfill in `src/test/setup.js`, sidestepping the
+Node/vitest/jsdom global-registration conflict entirely rather than chasing
+version combinations that might paper over it.
+
+**Recharts' `ResponsiveContainer` needs a `ResizeObserver` stub in jsdom**
+(no layout engine, so the real one is undefined) — same setup file, same
+reasoning: a minimal no-op stand-in rather than a heavier DOM-layout testing
+library.
+
 ## Task 6 — Insight engine upgrades
 
 **Late-payer rule: lateness measured against due date, threshold 2+ invoices

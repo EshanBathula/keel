@@ -118,3 +118,20 @@ thin-margin pricing, three-month decline, growth momentum, and top-customer upse
 Plain React + fetch (no state-management framework needed at this size). `lib/api.js`
 centralizes the JWT header, 401 → login redirect, and money/date formatting. Charts
 are Recharts. The design system lives in `styles.css` as CSS custom properties.
+
+**Error boundaries.** One wraps the whole app (catches a crash in `Login` or
+`Shell` itself); one wraps the routed page content, keyed by pathname so a
+crash on one page doesn't leave the fallback UI stuck after navigating away.
+Neither replaces a page's own inline error handling for failed API calls —
+they exist for the case an inline `try`/`catch` can't cover: a bug in a
+render path.
+
+**Code-splitting.** `Dashboard` and `Forecast` — the two pages that import
+Recharts, the single largest dependency in the bundle — are lazy-loaded via
+`React.lazy`/`Suspense` in `App.jsx`. Every other page (auth, ledger, CRUD)
+loads without pulling in the chart library at all.
+
+**Tests** (Vitest + React Testing Library, `npm test` in `frontend/`): the
+api client (`lib/api.js` — formatting, token-expiry, request/error handling)
+and the Forecast page's rendering states (loading, error, normal,
+low-confidence caveat, cash-low alert).
