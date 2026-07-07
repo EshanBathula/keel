@@ -1,5 +1,3 @@
-from datetime import date
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -8,6 +6,8 @@ from ..auth import get_current_user
 from ..database import get_db
 from ..models import Invoice, InvoiceStatus, Transaction, TxType, User
 from ..schemas import InvoiceCreate, InvoiceOut, InvoiceUpdate
+from ..tz import user_today
+from ._util import ensure_customer_owned
 
 router = APIRouter(prefix="/api/invoices", tags=["invoices"])
 
@@ -17,7 +17,7 @@ def list_invoices(db: Session = Depends(get_db), user: User = Depends(get_curren
     invoices = db.scalars(select(Invoice).where(Invoice.user_id == user.id)
                           .order_by(Invoice.due_date.desc())).all()
     # Auto-flag overdue on read so status is always current.
-    today = date.today()
+    today = user_today(user)
     changed = False
     for inv in invoices:
         if inv.status == InvoiceStatus.sent and inv.due_date < today:
@@ -31,6 +31,7 @@ def list_invoices(db: Session = Depends(get_db), user: User = Depends(get_curren
 @router.post("", response_model=InvoiceOut, status_code=201)
 def create_invoice(payload: InvoiceCreate, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)):
+    ensure_customer_owned(db, user.id, payload.customer_id)
     inv = Invoice(user_id=user.id, **payload.model_dump())
     db.add(inv)
     db.commit()
@@ -51,7 +52,7 @@ def update_invoice(invoice_id: int, payload: InvoiceUpdate, db: Session = Depend
     if payload.status == InvoiceStatus.paid and not previously_paid:
         tx = Transaction(
             user_id=user.id, customer_id=inv.customer_id, type=TxType.income,
-            category="Invoice payment", description=f"Invoice {inv.number} paid", date=date.today(),
+            category="Invoice payment", description=f"Invoice {inv.number} paid", date=user_today(user),
         )
         tx.amount_cents = inv.amount_cents
         db.add(tx)

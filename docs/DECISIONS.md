@@ -3,6 +3,75 @@
 Judgment calls made during the v2 upgrade, and known issues found along the way.
 Newest first within each task.
 
+## Task 4 — Ledger completeness
+
+**`GET /api/transactions` response shape changed: bare array → `{items, total,
+limit, offset}`.** This is a breaking change to an existing endpoint, made
+deliberately rather than adding a second paginated endpoint alongside it —
+carrying two list endpoints forward would be the kind of complexity that
+doesn't earn its place. Default page size dropped from 200 to 25 now that
+pagination is real (previously "pagination" was really just a large,
+un-paginated cap). Frontend `Transactions.jsx` and the existing tests that
+asserted a bare array were updated to match.
+
+**Transaction edit is `PATCH`, not `PUT`, mirroring the existing invoice
+pattern.** Partial updates use `payload.model_dump(exclude_unset=True))` so a
+field genuinely absent from the request body is left untouched — including
+the amount property setter, which converts dollars → cents transparently
+the same way `create_transaction` already does, so `PATCH` needed no new
+money-conversion code.
+
+**Text search is substring, across category + description, case-insensitive
+(`ilike`).** Simplest thing that answers "find me that expense" without
+building a query-string mini-language. Exact `category=` match is left
+in place alongside it for backward compatibility, though the UI only exposes
+the free-text search.
+
+**Fixed a cross-tenant data leak found while touching create/update:**
+`create_transaction`, `update_transaction`, and `create_invoice` accepted a
+`customer_id` with no check that it belonged to the caller. Since queries
+that resolve `tx.customer.name` don't re-filter by `user_id` (they trust the
+FK), a transaction could be linked to another tenant's customer row and leak
+that customer's name into `top_customers`/analytics for the wrong owner —
+a violation of "every query filters by user_id" for data reached via a
+relationship instead of a direct query. Fixed with a 3-line shared check
+(`routers/_util.py::ensure_customer_owned`) used by all three write paths;
+covered by `test_transaction_update_rejects_other_users_customer` and
+`test_invoice_rejects_other_users_customer`. This wasn't explicitly listed
+in the task but falls under "fix bugs you find rather than silently ignore."
+
+**Timezone: nullable `users.timezone`, validated as a real IANA zone at
+write time, resolved once per request via `app/tz.py::user_today()`.**
+Every router call that used to pass an implicit `today=date.today()` default
+now explicitly passes `user_today(user)` — `analytics.py` (kpis, monthly,
+categories, forecast, insights) and `invoices.py` (overdue auto-flagging,
+the invoice-paid transaction's date). Doing the invoice-side boundary too
+wasn't explicitly asked for ("use it for 'this month' boundaries"), but
+leaving invoices on server-UTC while KPIs use the user's timezone would mean
+an invoice could flip to `overdue` on a different calendar day than the
+dashboard thinks "today" is — an inconsistency a skeptical reviewer would
+catch immediately. `user_today()` takes an optional `now` for testability
+(same pattern as the rate limiter's `allow(key, now=...)`) — the three
+hand-computed unit tests in `test_tz.py` pick one UTC instant that resolves
+to three different calendar dates depending on zone (UTC-12, UTC, UTC+14),
+so the boundary-crossing behavior is provably correct without depending on
+wall-clock time when tests run.
+
+**No dedicated settings API — reused `PATCH /api/auth/me`.** Business name
+and timezone are both user-profile fields; a separate `/api/settings`
+endpoint would just be `/api/auth/me` with extra ceremony. Added a minimal
+frontend Settings page (business name + timezone, with a one-click "use your
+browser's timezone" suggestion) since Task 4 needs *some* surface to set a
+timezone after registration — registration itself doesn't ask for one to
+keep the signup form unchanged.
+
+### Known issues found (not yet fixed)
+
+- Frontend inline-edit and filter changes have no debounce; every keystroke
+  in the transaction search box fires a request. Acceptable at demo/small-
+  business data volumes; would want debouncing before this sees a ledger with
+  thousands of rows and real network latency.
+
 ## Task 3 — Auth hardening
 
 **Rate limiting: hand-rolled in-memory sliding window, not slowapi.** The task

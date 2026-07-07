@@ -1,42 +1,74 @@
 import csv
 import io
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..database import get_db
 from ..models import Transaction, TxType, User
-from ..schemas import TransactionCreate, TransactionOut
+from ..schemas import TransactionCreate, TransactionOut, TransactionPage, TransactionUpdate
+from ._util import ensure_customer_owned
 
 router = APIRouter(prefix="/api/transactions", tags=["transactions"])
 
 
-@router.get("", response_model=list[TransactionOut])
+@router.get("", response_model=TransactionPage)
 def list_transactions(
     type: TxType | None = None,
     category: str | None = None,
-    limit: int = Query(200, le=1000),
-    offset: int = 0,
+    q: str | None = Query(None, description="Case-insensitive search across category and description"),
+    date_from: date | None = None,
+    date_to: date | None = None,
+    limit: int = Query(25, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    q = select(Transaction).where(Transaction.user_id == user.id)
+    stmt = select(Transaction).where(Transaction.user_id == user.id)
     if type:
-        q = q.where(Transaction.type == type)
+        stmt = stmt.where(Transaction.type == type)
     if category:
-        q = q.where(Transaction.category == category)
-    q = q.order_by(Transaction.date.desc(), Transaction.id.desc()).limit(limit).offset(offset)
-    return db.scalars(q).all()
+        stmt = stmt.where(Transaction.category == category)
+    if date_from:
+        stmt = stmt.where(Transaction.date >= date_from)
+    if date_to:
+        stmt = stmt.where(Transaction.date <= date_to)
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where(or_(Transaction.description.ilike(like), Transaction.category.ilike(like)))
+
+    total = db.scalar(select(func.count()).select_from(stmt.subquery()))
+    items = db.scalars(
+        stmt.order_by(Transaction.date.desc(), Transaction.id.desc()).limit(limit).offset(offset)
+    ).all()
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
 @router.post("", response_model=TransactionOut, status_code=201)
 def create_transaction(payload: TransactionCreate, db: Session = Depends(get_db),
                        user: User = Depends(get_current_user)):
+    ensure_customer_owned(db, user.id, payload.customer_id)
     tx = Transaction(user_id=user.id, **payload.model_dump())
     db.add(tx)
+    db.commit()
+    db.refresh(tx)
+    return tx
+
+
+@router.patch("/{tx_id}", response_model=TransactionOut)
+def update_transaction(tx_id: int, payload: TransactionUpdate, db: Session = Depends(get_db),
+                       user: User = Depends(get_current_user)):
+    tx = db.get(Transaction, tx_id)
+    if not tx or tx.user_id != user.id:
+        raise HTTPException(404, "Transaction not found")
+    changes = payload.model_dump(exclude_unset=True)
+    if "customer_id" in changes:
+        ensure_customer_owned(db, user.id, changes["customer_id"])
+    for field, value in changes.items():
+        setattr(tx, field, value)
     db.commit()
     db.refresh(tx)
     return tx

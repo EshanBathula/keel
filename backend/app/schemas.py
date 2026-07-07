@@ -1,8 +1,21 @@
 """Pydantic schemas (request/response models)."""
+import datetime as dt
 from datetime import date, datetime
-from pydantic import BaseModel, EmailStr, Field, ConfigDict
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator
 
 from .models import TxType, InvoiceStatus
+
+
+def _validate_iana_timezone(v: str | None) -> str | None:
+    if v is None:
+        return v
+    try:
+        ZoneInfo(v)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ValueError(f"Unknown timezone: {v!r}")
+    return v
 
 
 # ---------- Auth ----------
@@ -10,6 +23,16 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
     business_name: str = "My Business"
+    timezone: str | None = None
+
+    _check_timezone = field_validator("timezone")(_validate_iana_timezone)
+
+
+class UserUpdate(BaseModel):
+    business_name: str | None = None
+    timezone: str | None = None
+
+    _check_timezone = field_validator("timezone")(_validate_iana_timezone)
 
 
 class UserOut(BaseModel):
@@ -17,6 +40,7 @@ class UserOut(BaseModel):
     id: int
     email: str
     business_name: str
+    timezone: str | None = None
 
 
 class Token(BaseModel):
@@ -50,6 +74,25 @@ class TransactionCreate(BaseModel):
 class TransactionOut(TransactionCreate):
     model_config = ConfigDict(from_attributes=True)
     id: int
+
+
+class TransactionUpdate(BaseModel):
+    type: TxType | None = None
+    amount: float | None = Field(default=None, gt=0)
+    category: str | None = None
+    description: str | None = None
+    # `dt.date`, not bare `date` — a field named `date` whose annotation is the
+    # bare name `date` with a default shadows itself mid-statement in the
+    # class body (the assignment target and the type name collide).
+    date: dt.date | None = None
+    customer_id: int | None = None
+
+
+class TransactionPage(BaseModel):
+    items: list[TransactionOut]
+    total: int
+    limit: int
+    offset: int
 
 
 # ---------- Invoices ----------

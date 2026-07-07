@@ -18,6 +18,7 @@ export default function Shell({ children }) {
     ['/customers', 'Customers'],
     ['/forecast', 'Forecast'],
     ['/insights', 'Insights'],
+    ['/settings', 'Settings'],
   ]
   return (
     <div className="shell">

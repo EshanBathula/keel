@@ -27,6 +27,13 @@ export const auth = {
     localStorage.setItem(TOKEN_KEY, token)
     localStorage.setItem(USER_KEY, JSON.stringify(user))
   },
+  // Merge a partial user update (e.g. after PATCH /api/auth/me) into the
+  // cached copy, so the sidebar etc. reflect it without a full re-login.
+  updateUser(patch) {
+    const merged = { ...auth.user(), ...patch }
+    localStorage.setItem(USER_KEY, JSON.stringify(merged))
+    return merged
+  },
   clear() {
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(USER_KEY)

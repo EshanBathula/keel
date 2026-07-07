@@ -69,12 +69,80 @@ def test_transaction_crud_and_isolation(client, auth):
     # A second user cannot see or delete the first user's data.
     r2 = client.post("/api/auth/register", json={"email": "other@example.com", "password": "supersecret1"})
     other = {"Authorization": f"Bearer {r2.json()['access_token']}"}
-    assert client.get("/api/transactions", headers=other).json() == []
+    other_page = client.get("/api/transactions", headers=other).json()
+    assert other_page["items"] == [] and other_page["total"] == 0
     assert client.delete(f"/api/transactions/{tx_id}", headers=other).status_code == 404
 
-    assert len(client.get("/api/transactions", headers=auth).json()) == 1
+    page = client.get("/api/transactions", headers=auth).json()
+    assert len(page["items"]) == 1 and page["total"] == 1
     assert client.delete(f"/api/transactions/{tx_id}", headers=auth).status_code == 204
-    assert client.get("/api/transactions", headers=auth).json() == []
+    page = client.get("/api/transactions", headers=auth).json()
+    assert page["items"] == [] and page["total"] == 0
+
+
+def test_transaction_update(client, auth):
+    tx = client.post("/api/transactions", headers=auth, json={
+        "type": "expense", "amount": 100, "category": "Software",
+        "description": "Old", "date": str(date.today())}).json()
+
+    r = client.patch(f"/api/transactions/{tx['id']}", headers=auth, json={"amount": 150.25, "category": "Tools"})
+    assert r.status_code == 200
+    updated = r.json()
+    assert updated["amount"] == 150.25
+    assert updated["category"] == "Tools"
+    # Fields not in the request body are untouched.
+    assert updated["description"] == "Old"
+    assert updated["type"] == "expense"
+
+    # A second user cannot edit the first user's transaction.
+    r2 = client.post("/api/auth/register", json={"email": "editor@example.com", "password": "supersecret1"})
+    other = {"Authorization": f"Bearer {r2.json()['access_token']}"}
+    assert client.patch(f"/api/transactions/{tx['id']}", headers=other, json={"amount": 1}).status_code == 404
+
+
+def test_transaction_update_rejects_other_users_customer(client, auth):
+    tx = client.post("/api/transactions", headers=auth, json={
+        "type": "income", "amount": 100, "category": "Services", "date": str(date.today())}).json()
+    r2 = client.post("/api/auth/register", json={"email": "stranger@example.com", "password": "supersecret1"})
+    other_auth = {"Authorization": f"Bearer {r2.json()['access_token']}"}
+    other_customer = client.post("/api/customers", headers=other_auth, json={"name": "Not Yours"}).json()
+
+    r = client.patch(f"/api/transactions/{tx['id']}", headers=auth,
+                     json={"customer_id": other_customer["id"]})
+    assert r.status_code == 400
+
+    r = client.post("/api/transactions", headers=auth, json={
+        "type": "income", "amount": 50, "category": "Services", "date": str(date.today()),
+        "customer_id": other_customer["id"]})
+    assert r.status_code == 400
+
+
+def test_transaction_filters_and_pagination(client, auth):
+    for i in range(5):
+        client.post("/api/transactions", headers=auth, json={
+            "type": "expense", "amount": 10 + i, "category": "Software",
+            "description": f"Tool {i}", "date": str(date.today() - timedelta(days=i))})
+    client.post("/api/transactions", headers=auth, json={
+        "type": "income", "amount": 500, "category": "Services",
+        "description": "Client work", "date": str(date.today())})
+
+    page1 = client.get("/api/transactions?limit=2&offset=0", headers=auth).json()
+    assert page1["total"] == 6
+    assert len(page1["items"]) == 2
+    page2 = client.get("/api/transactions?limit=2&offset=2", headers=auth).json()
+    assert len(page2["items"]) == 2
+    assert {t["id"] for t in page1["items"]}.isdisjoint({t["id"] for t in page2["items"]})
+
+    by_type = client.get("/api/transactions?type=income", headers=auth).json()
+    assert by_type["total"] == 1 and by_type["items"][0]["description"] == "Client work"
+
+    by_text = client.get("/api/transactions?q=client", headers=auth).json()
+    assert by_text["total"] == 1 and by_text["items"][0]["description"] == "Client work"
+
+    by_range = client.get(
+        f"/api/transactions?date_from={date.today() - timedelta(days=1)}&date_to={date.today()}",
+        headers=auth).json()
+    assert by_range["total"] == 3  # expenses at i=0 (today) and i=1 (yesterday), plus today's income
 
 
 def test_csv_import(client, auth):
@@ -163,8 +231,30 @@ def test_invoice_paid_creates_income(client, auth):
         "due_date": str(date.today() + timedelta(days=20))}).json()
     r = client.patch(f"/api/invoices/{inv['id']}", headers=auth, json={"status": "paid"})
     assert r.status_code == 200
-    txs = client.get("/api/transactions", headers=auth).json()
+    txs = client.get("/api/transactions", headers=auth).json()["items"]
     assert any(t["amount"] == 750 and t["type"] == "income" for t in txs)
+
+
+def test_invoice_rejects_other_users_customer(client, auth):
+    r2 = client.post("/api/auth/register", json={"email": "stranger2@example.com", "password": "supersecret1"})
+    other_auth = {"Authorization": f"Bearer {r2.json()['access_token']}"}
+    other_customer = client.post("/api/customers", headers=other_auth, json={"name": "Not Yours"}).json()
+
+    r = client.post("/api/invoices", headers=auth, json={
+        "customer_id": other_customer["id"], "number": "INV-2", "amount": 500,
+        "status": "sent", "issue_date": str(date.today()), "due_date": str(date.today() + timedelta(days=30))})
+    assert r.status_code == 400
+
+
+def test_user_timezone_update_and_validation(client, auth):
+    r = client.patch("/api/auth/me", headers=auth, json={"timezone": "not/a/real/zone"})
+    assert r.status_code == 422
+
+    r = client.patch("/api/auth/me", headers=auth, json={"timezone": "America/Chicago"})
+    assert r.status_code == 200
+    assert r.json()["timezone"] == "America/Chicago"
+
+    assert client.get("/api/auth/me", headers=auth).json()["timezone"] == "America/Chicago"
 
 
 def test_overdue_autoflag_and_insights(client, auth):

@@ -7,29 +7,51 @@ Base URL: `http://localhost:8000`. All endpoints except `/api/auth/*` and
 
 ### POST /api/auth/register
 ```json
-{ "email": "you@example.com", "password": "min-8-chars", "business_name": "My Business" }
+{ "email": "you@example.com", "password": "min-8-chars", "business_name": "My Business",
+  "timezone": "America/Chicago" }
 ```
 → `201` `{ "access_token": "...", "token_type": "bearer", "user": { ... } }`
-`409` if the email is taken.
+`409` if the email is taken. `timezone` is optional (any IANA zone name);
+`429` if rate-limited (5 registrations/hour/IP).
 
 ### POST /api/auth/login
 ```json
 { "email": "you@example.com", "password": "..." }
 ```
-→ `200` with the same token payload. `401` on bad credentials.
+→ `200` with the same token payload. `401` on bad credentials, `429` if
+rate-limited (5 attempts/minute/IP).
 
 ### GET /api/auth/me → current user.
 
+### PATCH /api/auth/me
+```json
+{ "business_name": "New Name", "timezone": "America/Chicago" }
+```
+Both fields optional; only fields present in the body are changed.
+`422` if `timezone` isn't a recognized IANA zone. The user's timezone (if
+set) is used for "this month"/"today" boundaries across analytics, forecast,
+insights, and invoice overdue-flagging — otherwise those fall back to UTC.
+
 ## Transactions
 
-### GET /api/transactions?type=&category=&limit=&offset=
-Newest first. `type` is `income` or `expense`.
+### GET /api/transactions?type=&category=&q=&date_from=&date_to=&limit=&offset=
+Newest first, server-side paginated. `type` is `income` or `expense`;
+`category` is an exact match; `q` is a case-insensitive substring search
+across category and description; `date_from`/`date_to` are inclusive
+(`YYYY-MM-DD`). `limit` defaults to 25 (max 200).
+→ `{ "items": [...], "total": n, "limit": 25, "offset": 0 }`
 
 ### POST /api/transactions
 ```json
 { "type": "income", "amount": 1200.50, "category": "Services",
   "description": "Consulting", "date": "2026-07-01", "customer_id": 3 }
 ```
+`400` if `customer_id` doesn't belong to the caller.
+
+### PATCH /api/transactions/{id}
+Same fields as create, all optional — only fields present in the body are
+changed. `404` if the transaction isn't the caller's, `400` if `customer_id`
+doesn't belong to the caller.
 
 ### DELETE /api/transactions/{id} → `204`
 

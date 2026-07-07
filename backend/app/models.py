@@ -28,6 +28,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     business_name: Mapped[str] = mapped_column(String(255), default="My Business")
+    timezone: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="user", cascade="all, delete-orphan")

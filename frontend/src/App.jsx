@@ -8,6 +8,7 @@ import Invoices from './pages/Invoices.jsx'
 import Customers from './pages/Customers.jsx'
 import Forecast from './pages/Forecast.jsx'
 import Insights from './pages/Insights.jsx'
+import Settings from './pages/Settings.jsx'
 
 function Protected({ children }) {
   if (!auth.isValid()) {
@@ -33,6 +34,7 @@ export default function App() {
                 <Route path="/customers" element={<Customers />} />
                 <Route path="/forecast" element={<Forecast />} />
                 <Route path="/insights" element={<Insights />} />
+                <Route path="/settings" element={<Settings />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </Shell>

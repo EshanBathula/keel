@@ -7,7 +7,7 @@ from ..auth import create_access_token, get_current_user, hash_password, verify_
 from ..database import get_db
 from ..models import User
 from ..rate_limit import login_limiter, register_limiter
-from ..schemas import Token, UserCreate, UserOut
+from ..schemas import Token, UserCreate, UserOut, UserUpdate
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -28,7 +28,7 @@ def register(payload: UserCreate, request: Request, db: Session = Depends(get_db
     if db.scalar(select(User).where(User.email == payload.email)):
         raise HTTPException(409, "An account with this email already exists")
     user = User(email=payload.email, password_hash=hash_password(payload.password),
-                business_name=payload.business_name)
+                business_name=payload.business_name, timezone=payload.timezone)
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -47,4 +47,14 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
 
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(get_current_user)):
+    return user
+
+
+@router.patch("/me", response_model=UserOut)
+def update_me(payload: UserUpdate, db: Session = Depends(get_db),
+             user: User = Depends(get_current_user)):
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(user, field, value)
+    db.commit()
+    db.refresh(user)
     return user
