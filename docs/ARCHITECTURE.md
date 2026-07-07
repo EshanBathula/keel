@@ -28,8 +28,13 @@ backend/app/
 ├── routers/         Thin HTTP layer — validation + auth, no business logic
 └── services/        All business logic, unit-testable without HTTP
     ├── analytics.py   Monthly series, KPIs, health score, breakdowns
-    ├── forecast.py    OLS trend + moving-average blend, confidence bands
-    └── insights.py    Rule engine producing prioritized recommendations
+    ├── weekly.py      Weekly transaction aggregation (modeling substrate)
+    ├── insights.py    Rule engine producing prioritized recommendations
+    └── forecast/      Cash-flow forecasting engine (see below)
+        ├── models.py    Seasonal-naive, damped-trend, OLS+MA candidates
+        ├── backtest.py  Rolling-origin backtest, model selection, error stats
+        ├── cash.py      Unpaid-invoice cash overlay (payment-behavior weighted)
+        └── engine.py    Orchestration, bands, alerts, scenario planner
 
 backend/alembic/     Schema migrations (see "Database migrations" in README)
 ```
@@ -61,16 +66,38 @@ A 0–100 composite starting from 50 and adjusted by:
 | Overdue share of receivables | −10 | Collections discipline |
 | Cash runway | ±10 | ≥6 months is safe, <2 is danger |
 
-## The forecaster
+## The forecaster (`services/forecast/`)
 
-1. Fit ordinary least squares to the trailing 12 months (leading empty months dropped
-   so young businesses aren't dragged toward zero).
-2. Blend the trend 60/40 with the 3-month moving average to damp overreaction.
-3. Clamp at zero (revenue/expenses can't go negative).
-4. Band = 1.28 × residual std deviation (~80% interval), widening 15% per month of
-   horizon to reflect growing uncertainty.
+Weekly-granularity engine with measured model selection and honest uncertainty:
 
-Pure Python by design — no NumPy — to keep the install footprint minimal.
+1. **Weekly aggregation** (`weekly.py`): transactions bucketed by Monday-start
+   week, complete weeks only (the in-progress week would read as a collapse),
+   leading empty weeks trimmed. Organic revenue is tracked separately from
+   invoice-payment revenue so known cash isn't modeled twice.
+2. **Model competition** (`forecast/models.py`, `forecast/backtest.py`): three
+   candidates — seasonal-naive (same week last 52-week cycle), Holt's
+   damped-trend exponential smoothing (grid-searched α/β/φ), and the v1
+   OLS+moving-average blend — selected per user, per series (revenue and
+   expenses independently) by rolling-origin backtest: hold out the last 8
+   weeks, walk forward with an expanding window, score 1-step MAE.
+3. **Cash-aware overlay** (`forecast/cash.py`): unpaid invoices land on their
+   due-date week, split by that customer's historical on-time payment rate,
+   with the late share landing at their average historical lateness.
+4. **Actionable outputs** (`forecast/engine.py`): projected cash balance per
+   week with P10/P50/P90 bands from *empirical* backtest-residual quantiles
+   (no normality assumption), widening √h with horizon; minimum balance and
+   its date; a `cash_low_alert` when the P10 curve breaches a one-month
+   expense buffer; `safe_to_spend` — the largest one-time purchase that keeps
+   the buffer intact for 90 days; and a scenario planner
+   (`POST /api/analytics/scenario`) that re-projects under revenue/expense
+   deltas.
+5. **Honesty guards**: `expected_error_pct` reports the backtested 4-week-
+   aggregate error of the winning model (the error of the monthly numbers the
+   UI shows); under 12 weeks of history the response carries
+   `confidence: "low"`, widened bands, and a plain-language caveat.
+
+Pure Python by design — no NumPy/statsmodels — to keep the install footprint
+minimal (see docs/DECISIONS.md).
 
 ## The insight engine
 

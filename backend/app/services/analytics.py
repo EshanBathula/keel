@@ -54,6 +54,23 @@ def monthly_series(db: Session, user_id: int, months: int = 12, today: date | No
     ]
 
 
+def avg_monthly_burn_cents(db: Session, user_id: int, today: date | None = None) -> int:
+    """Average monthly expenses over the trailing 6 complete-ish months with activity."""
+    series = monthly_series_cents(db, user_id, months=12, today=today)
+    active = [p for p in series[-6:] if p["revenue_cents"] or p["expenses_cents"]]
+    return round(sum(p["expenses_cents"] for p in active) / len(active)) if active else 0
+
+
+def approx_cash_balance_cents(db: Session, user_id: int, today: date | None = None) -> int:
+    """Proxy for current cash on hand: cumulative net income over the trailing
+    12 months. Keel has no bank-feed integration, so this is a computed proxy,
+    not a real balance — used consistently for both cash-runway (below) and
+    the forecast's starting cash-curve balance (services/forecast).
+    """
+    series = monthly_series_cents(db, user_id, months=12, today=today)
+    return sum(p["net_cents"] for p in series)
+
+
 def compute_kpis(db: Session, user_id: int, today: date | None = None) -> dict:
     today = today or date.today()
     series = monthly_series_cents(db, user_id, months=12, today=today)
@@ -67,12 +84,10 @@ def compute_kpis(db: Session, user_id: int, today: date | None = None) -> dict:
     if this_m["revenue_cents"] > 0:
         margin = round(this_m["net_cents"] / this_m["revenue_cents"] * 100, 1)
 
-    # Burn: average monthly expenses over trailing 6 complete-ish months with activity.
-    active = [p for p in series[-6:] if p["revenue_cents"] or p["expenses_cents"]]
-    avg_burn_cents = round(sum(p["expenses_cents"] for p in active) / len(active)) if active else 0
+    avg_burn_cents = avg_monthly_burn_cents(db, user_id, today=today)
 
     # Runway: cumulative net (proxy for cash) / burn.
-    cash_cents = sum(p["net_cents"] for p in series)
+    cash_cents = approx_cash_balance_cents(db, user_id, today=today)
     runway = round(max(cash_cents, 0) / avg_burn_cents, 1) if avg_burn_cents > 0 else None
 
     invoices = db.scalars(select(Invoice).where(Invoice.user_id == user_id)).all()

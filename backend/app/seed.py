@@ -61,16 +61,24 @@ def run():
                     user_id=user.id, type=TxType.expense, amount=amt, category=cat,
                     description=f"{cat} — monthly", date=anchor.replace(day=min(5, 28))))
 
-        # Invoices: a mix of paid, sent, and overdue.
+        # Invoices: a mix of paid, sent, and overdue. Paid ones get a
+        # paid_date (some on time, some late) so the cash-aware forecast and
+        # payment-behavior insights have real history to learn from.
         statuses = [InvoiceStatus.paid, InvoiceStatus.paid, InvoiceStatus.sent,
                     InvoiceStatus.sent, InvoiceStatus.overdue]
         for i, st in enumerate(statuses, start=1):
             cust = random.choice(customers)
             issue = today - timedelta(days=random.randint(10, 60))
+            due = issue + timedelta(days=30)
+            paid = None
+            if st == InvoiceStatus.paid:
+                # First paid invoice on time, second one ~a week late — but
+                # never a paid_date in the future.
+                paid = min(due - timedelta(days=3) if i == 1 else due + timedelta(days=8), today)
             db.add(Invoice(
                 user_id=user.id, customer_id=cust.id, number=f"INV-{1000 + i}",
                 amount=round(random.uniform(900, 4200), 2), status=st,
-                issue_date=issue, due_date=issue + timedelta(days=30)))
+                issue_date=issue, due_date=due, paid_date=paid))
 
         db.commit()
         print("Seeded demo account: demo@keel.app / demopassword")

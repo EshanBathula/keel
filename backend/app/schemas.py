@@ -112,6 +112,7 @@ class InvoiceUpdate(BaseModel):
 class InvoiceOut(InvoiceCreate):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    paid_date: date | None = None
 
 
 # ---------- Analytics ----------
@@ -137,13 +138,58 @@ class KPIs(BaseModel):
     health_grade: str
 
 
-class ForecastPoint(BaseModel):
+class ForecastMonthlyPoint(BaseModel):
     month: str
     projected_revenue: float
     projected_expenses: float
     projected_net: float
     lower: float
     upper: float
+
+
+class ForecastWeeklyPoint(BaseModel):
+    week_start: date
+    cash_p10: float
+    cash_p50: float
+    cash_p90: float
+
+
+class CashLowAlert(BaseModel):
+    week_start: date
+    shortfall: float
+
+
+class ForecastResponse(BaseModel):
+    confidence: str  # "low" | "normal"
+    model_revenue: str
+    model_expenses: str
+    expected_error_pct: float | None
+    weekly: list[ForecastWeeklyPoint]
+    monthly: list[ForecastMonthlyPoint]
+    min_cash_balance: float
+    min_cash_balance_date: date
+    cash_low_alert: CashLowAlert | None
+    safe_to_spend: float
+    caveat: str | None
+
+
+class ScenarioRequest(BaseModel):
+    monthly_revenue_change_pct: float | None = None
+    new_monthly_expense_cents: int | None = None
+    start_month: str | None = None  # "YYYY-MM", required if new_monthly_expense_cents is set
+
+    @field_validator("start_month")
+    @classmethod
+    def _valid_start_month(cls, v):
+        if v is None:
+            return v
+        try:
+            year, month = v.split("-")
+            if not (1 <= int(month) <= 12) or len(year) != 4:
+                raise ValueError
+        except ValueError:
+            raise ValueError(f"start_month must be 'YYYY-MM', got {v!r}")
+        return v
 
 
 class Insight(BaseModel):

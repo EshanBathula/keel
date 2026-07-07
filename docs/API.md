@@ -106,10 +106,54 @@ Totals per category, descending.
 Revenue and share of total per customer.
 
 ### GET /api/analytics/forecast?horizon=6
+`horizon` is in months (1–12). Weekly-granularity, cash-aware projection:
+
 ```json
-[{ "month": "2026-08", "projected_revenue": 18935.13, "projected_expenses": 9987.0,
-   "projected_net": 8948.13, "lower": 16910.86, "upper": 20959.4 }, ...]
+{
+  "confidence": "normal",
+  "model_revenue": "damped_trend",
+  "model_expenses": "ols_ma_blend",
+  "expected_error_pct": 21.8,
+  "weekly": [
+    { "week_start": "2026-07-13", "cash_p10": 82413.08,
+      "cash_p50": 87929.94, "cash_p90": 94930.04 }, ...
+  ],
+  "monthly": [
+    { "month": "2026-08", "projected_revenue": 18935.13,
+      "projected_expenses": 9987.0, "projected_net": 8948.13,
+      "lower": 16910.86, "upper": 20959.4 }, ...
+  ],
+  "min_cash_balance": 87929.94,
+  "min_cash_balance_date": "2026-07-13",
+  "cash_low_alert": null,
+  "safe_to_spend": 72721.73,
+  "caveat": null
+}
 ```
+
+- Models compete per user via rolling-origin backtest (last 8 weeks, walk
+  forward, MAE); `model_revenue`/`model_expenses` name each winner.
+- `expected_error_pct` is that model's backtested error on 4-week aggregates —
+  "typically within ±X%" for the monthly figures shown.
+- `weekly` is the projected cash-balance curve with empirical P10/P50/P90
+  bands; unpaid invoices contribute on their due dates, weighted by each
+  customer's historical on-time payment rate.
+- `cash_low_alert` is non-null (`{week_start, shortfall}`) when the P10 curve
+  dips below a one-month expense buffer; `safe_to_spend` is the largest
+  one-time purchase that keeps the buffer intact over the next 90 days.
+- With under 12 weeks of history, `confidence` is `"low"`, bands widen, and
+  `caveat` carries a plain-language warning.
+
+### POST /api/analytics/scenario?horizon=6
+```json
+{ "monthly_revenue_change_pct": 10 }
+```
+or
+```json
+{ "new_monthly_expense_cents": 400000, "start_month": "2026-09" }
+```
+(or both). Returns the same shape as `/forecast`, re-projected under the
+deltas. `422` if `start_month` isn't `YYYY-MM`.
 
 ### GET /api/analytics/insights
 Prioritized list: `{ "id", "severity", "title", "detail", "estimated_impact" }`,

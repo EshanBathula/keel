@@ -88,6 +88,7 @@ class Invoice(Base):
     status: Mapped[InvoiceStatus] = mapped_column(Enum(InvoiceStatus), default=InvoiceStatus.draft, index=True)
     issue_date: Mapped[date] = mapped_column(Date)
     due_date: Mapped[date] = mapped_column(Date)
+    paid_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     user: Mapped["User"] = relationship(back_populates="invoices")

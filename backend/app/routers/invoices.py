@@ -6,6 +6,7 @@ from ..auth import get_current_user
 from ..database import get_db
 from ..models import Invoice, InvoiceStatus, Transaction, TxType, User
 from ..schemas import InvoiceCreate, InvoiceOut, InvoiceUpdate
+from ..services.weekly import INVOICE_PAYMENT_CATEGORY
 from ..tz import user_today
 from ._util import ensure_customer_owned
 
@@ -47,12 +48,16 @@ def update_invoice(invoice_id: int, payload: InvoiceUpdate, db: Session = Depend
         raise HTTPException(404, "Invoice not found")
     previously_paid = inv.status == InvoiceStatus.paid
     inv.status = payload.status
-    # Marking paid records the revenue automatically. Copy amount_cents directly
+    # Marking paid records the revenue automatically and stamps paid_date,
+    # which drives this customer's on-time-payment rate for cash-aware
+    # forecasting (services/forecast/cash.py). Copy amount_cents directly
     # (not via the dollar `amount` property) to avoid a needless round trip.
     if payload.status == InvoiceStatus.paid and not previously_paid:
+        today = user_today(user)
+        inv.paid_date = today
         tx = Transaction(
             user_id=user.id, customer_id=inv.customer_id, type=TxType.income,
-            category="Invoice payment", description=f"Invoice {inv.number} paid", date=user_today(user),
+            category=INVOICE_PAYMENT_CATEGORY, description=f"Invoice {inv.number} paid", date=today,
         )
         tx.amount_cents = inv.amount_cents
         db.add(tx)

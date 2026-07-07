@@ -3,6 +3,103 @@
 Judgment calls made during the v2 upgrade, and known issues found along the way.
 Newest first within each task.
 
+## Task 5 — Forecasting engine
+
+**Pure Python, no statsmodels.** The task allowed statsmodels for Holt's
+damped-trend method if judged worth the dependency. It isn't: statsmodels
+pulls in NumPy+SciPy+pandas (~100MB installed) to replace ~60 lines of
+readable smoothing code. The hand-rolled implementation grid-searches
+(α, β, φ) over a coarse grid rather than running true MLE optimization —
+for noisy weekly small-business series, parameter precision beyond a coarse
+grid is illusory anyway (the backtest, not the in-sample fit, decides
+whether the model ships). Tradeoff: our seasonal-naive and damped-trend are
+textbook implementations, not battle-tested library code — mitigated by
+hand-computed unit tests for each model and selection tests on synthetic
+series with knowable winners.
+
+**Model selection per series, not per user.** Revenue and expenses get
+independent backtests and can ship different winners — expense patterns
+(monthly rent lump) and revenue patterns (seasonal client payments) have no
+reason to share a best model.
+
+**`expected_error_pct` is measured at 4-week-aggregate scale, not weekly.**
+Discovered while validating against seeded demo data: weekly 1-step MAE ran
+~80–130% of average weekly revenue, because small businesses get paid in
+lumps (a $0 week followed by a $9.7k week is normal, and no model can know
+which week within the month an invoice clears). Quoting "±104%" against the
+monthly totals the UI displays would be misleadingly pessimistic — the
+mirror image of fabricated precision — because weekly errors largely cancel
+within a month (measured: ±21.8% at 4-week scale on the same data/model).
+Selection still uses weekly 1-step MAE exactly as specified; only the
+*reported* error is measured at the grain the user reads
+(`backtest.aggregate_error_pct`, walk-forward 4-week sums, honest per-origin
+retraining).
+
+**The current in-progress week is excluded from modeling history.** Found via
+a failing integration test: the partial week's low totals read to the models
+as a sudden collapse — seasonal-naive's last-value fallback would project
+the half-empty week forever. Complete weeks only; the partial week's actual
+transactions still count via the starting cash balance.
+
+**Organic vs. invoiced revenue split (double-counting guard).** Invoice
+payments are recorded as income transactions (the paid-invoice invariant),
+so history contains them; unpaid invoices are *also* added explicitly to
+future weeks. If the statistical model were trained on total revenue, the
+invoice cash would be counted twice — once in the trend, once in the
+overlay. The engine therefore models only organic (non-invoice-payment)
+revenue statistically and layers scheduled invoice cash on top.
+`weekly.INVOICE_PAYMENT_CATEGORY` marks the split; the invoice-paid flow
+writes that category. Limitation: a user who hand-records an income
+transaction in the category "Invoice payment" gets it treated as invoice
+cash — acceptable ambiguity for now, noted here rather than adding a
+schema-level provenance flag.
+
+**Invoice timing: expected-value split, not a delay distribution.** Each
+unpaid invoice contributes `amount × on_time_rate` in its due week and the
+remainder at the customer's average historical lateness. A full
+delay-distribution simulation (Monte Carlo over payment dates) would look
+more sophisticated but with 2–20 invoices outstanding the expected-value
+answer is within noise of the simulated one, and it's exactly auditable by
+hand — which the integration tests do. Customers with no history inherit
+the user's average on-time rate (or 70% if the user has no history at all).
+Overdue invoices' expected weeks are clamped to the current week rather than
+silently dropped in the past. `paid_date` (new column) is stamped when an
+invoice transitions to paid; pre-existing paid invoices have NULL paid_date
+and are excluded from the stats rather than assumed on-time.
+
+**Bands: empirical quantiles of backtest residuals, √h widening.** P10/P50/P90
+come from the actual walk-forward residuals (per the task: no assumed
+normality). Widening with the square root of horizon-week h is the standard
+scaling for a sum of ~independent per-week errors accumulating into a cash
+balance; low-confidence forecasts widen a further 1.5×. With too little
+history to backtest at all, bands fall back to a crude ±30% of the point
+estimate — always paired with `confidence: "low"`.
+
+**Cash balance is a proxy.** Keel has no bank feed, so the "starting cash"
+for the projected curve is cumulative net income over the trailing 12
+months (`analytics.approx_cash_balance_cents`) — the same proxy the runway
+KPI already used, now factored out and shared so the two never disagree.
+`safe_to_spend` and `cash_low_alert` measure against a one-month-average-
+expenses buffer, not zero: "you can spend $X" should not mean "you'll hit
+exactly $0 if nothing goes wrong."
+
+**API break: `/api/analytics/forecast` response is a new object.** The old
+bare list of monthly points couldn't carry confidence, error, alerts, or the
+weekly cash curve. The monthly points survive unchanged in shape under the
+`monthly` key (the Dashboard chart needed no changes; the Forecast page was
+rewritten anyway). Old `services/forecast.py` deleted, replaced by the
+`services/forecast/` package.
+
+### Known issues found (not yet fixed)
+
+- Weekly modeling history is capped at 130 weeks (~2.5 years) for
+  performance; seasonal-naive therefore sees at most 2 full annual cycles.
+  Fine at current scale.
+- The scenario planner applies revenue deltas to *organic* revenue only —
+  already-issued unpaid invoices are treated as committed cash that a
+  hypothetical "revenue drops 20%" doesn't claw back. Defensible, but a user
+  modeling a catastrophic scenario might expect receivables to degrade too.
+
 ## Task 4 — Ledger completeness
 
 **`GET /api/transactions` response shape changed: bare array → `{items, total,
