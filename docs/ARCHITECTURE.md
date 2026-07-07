@@ -104,9 +104,14 @@ minimal (see docs/DECISIONS.md).
 Each rule in `services/insights.py` is an independent function of the user's data that
 may emit one insight with a severity (`critical` → `warning` → `opportunity` →
 `positive`) and, where computable, an estimated dollar impact. Adding a rule is
-appending one block — no framework. Current rules: overdue collections, runway
-pressure, revenue concentration, per-category expense spikes, thin-margin pricing,
-three-month decline, growth momentum, and top-customer upsell.
+appending one block — no framework. Every number in insight copy is computed from
+the user's own data; there are no canned industry statistics. Current rules:
+overdue collections, forecast cash-low alert (surfaces the forecasting engine's
+`cash_low_alert` with its projected date and shortfall), runway pressure, chronic
+late payers (per-customer average days past due from `paid_date` history),
+revenue concentration, per-category expense spikes (single month), category
+quarter-over-quarter growth trends (three complete months vs. the prior three),
+thin-margin pricing, three-month decline, growth momentum, and top-customer upsell.
 
 ## Frontend
 

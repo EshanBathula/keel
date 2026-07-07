@@ -3,6 +3,46 @@
 Judgment calls made during the v2 upgrade, and known issues found along the way.
 Newest first within each task.
 
+## Task 6 — Insight engine upgrades
+
+**Late-payer rule: lateness measured against due date, threshold 2+ invoices
+averaging 7+ days past due.** One late invoice is an anecdote; the rule
+requires a pattern (≥2 paid invoices with a recorded `paid_date`) before
+naming a customer, and quotes the actual computed average ("SlowPay LLC pays
+20 days late on average … across 2 invoices"). Estimated impact is that
+customer's (or customers') currently outstanding receivables — the money the
+pattern puts at risk — not a made-up figure. Invoices predating the
+`paid_date` column are excluded rather than assumed on-time (same policy as
+the forecast's payment stats).
+
+**Category trend rule: last three COMPLETE months vs. the prior three,
++25% threshold, $500 minimum quarterly spend.** Complete months so the
+current partial month can't fake a decline or mute a rise. This coexists
+deliberately with the existing single-month spike rule — a spike says "this
+month is weird", the trend says "this has been climbing for a quarter";
+different failure modes, different advice. The $500 floor keeps a $33→$66
+category from crying wolf with a scary-sounding "+100%". Capped at the top 2
+categories by dollar delta so the page isn't wallpapered with warnings.
+
+**Forecast tie-in reuses the real engine, not a reimplementation.** The
+`forecast-cash-low` insight calls `services/forecast.forecast()` (3-month
+horizon) and surfaces its `cash_low_alert` verbatim — projected week and
+shortfall amount — so the Insights page and the Forecast page can never
+disagree about whether cash is running low. If the forecast is
+low-confidence, the insight says so in plain language instead of hiding it.
+Cost: one extra engine run per insights request (~tens of ms, backtest
+included); fine at this scale, and correctness-by-construction beats a
+cached copy that can drift.
+
+**Removed both fabricated statistics.** "A 5% price increase typically loses
+far fewer customers than it earns in margin" (unverifiable claim presented
+as fact) and "expansion converts 60-70% vs 5-20% for new acquisition"
+(canned industry numbers with no source). Both rules survive with their
+computed parts intact — the pricing rule's "+5% on $X = $Y" is arithmetic on
+the user's own revenue and now says "if volume holds"; the upsell rule now
+makes a qualitative cost comparison instead of quoting invented conversion
+rates.
+
 ## Task 5 — Forecasting engine
 
 **Pure Python, no statsmodels.** The task allowed statsmodels for Holt's
