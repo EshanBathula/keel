@@ -1,8 +1,9 @@
 """SQLAlchemy ORM models for Keel."""
-import enum
-from datetime import datetime, date
 
-from sqlalchemy import String, Integer, Date, DateTime, ForeignKey, Enum, Text
+import enum
+from datetime import date, datetime
+
+from sqlalchemy import Date, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .database import Base

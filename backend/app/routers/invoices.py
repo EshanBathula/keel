@@ -15,8 +15,7 @@ router = APIRouter(prefix="/api/invoices", tags=["invoices"])
 
 @router.get("", response_model=list[InvoiceOut])
 def list_invoices(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    invoices = db.scalars(select(Invoice).where(Invoice.user_id == user.id)
-                          .order_by(Invoice.due_date.desc())).all()
+    invoices = db.scalars(select(Invoice).where(Invoice.user_id == user.id).order_by(Invoice.due_date.desc())).all()
     # Auto-flag overdue on read so status is always current.
     today = user_today(user)
     changed = False
@@ -30,8 +29,7 @@ def list_invoices(db: Session = Depends(get_db), user: User = Depends(get_curren
 
 
 @router.post("", response_model=InvoiceOut, status_code=201)
-def create_invoice(payload: InvoiceCreate, db: Session = Depends(get_db),
-                   user: User = Depends(get_current_user)):
+def create_invoice(payload: InvoiceCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     ensure_customer_owned(db, user.id, payload.customer_id)
     inv = Invoice(user_id=user.id, **payload.model_dump())
     db.add(inv)
@@ -41,8 +39,9 @@ def create_invoice(payload: InvoiceCreate, db: Session = Depends(get_db),
 
 
 @router.patch("/{invoice_id}", response_model=InvoiceOut)
-def update_invoice(invoice_id: int, payload: InvoiceUpdate, db: Session = Depends(get_db),
-                   user: User = Depends(get_current_user)):
+def update_invoice(
+    invoice_id: int, payload: InvoiceUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+):
     inv = db.get(Invoice, invoice_id)
     if not inv or inv.user_id != user.id:
         raise HTTPException(404, "Invoice not found")
@@ -56,8 +55,12 @@ def update_invoice(invoice_id: int, payload: InvoiceUpdate, db: Session = Depend
         today = user_today(user)
         inv.paid_date = today
         tx = Transaction(
-            user_id=user.id, customer_id=inv.customer_id, type=TxType.income,
-            category=INVOICE_PAYMENT_CATEGORY, description=f"Invoice {inv.number} paid", date=today,
+            user_id=user.id,
+            customer_id=inv.customer_id,
+            type=TxType.income,
+            category=INVOICE_PAYMENT_CATEGORY,
+            description=f"Invoice {inv.number} paid",
+            date=today,
         )
         tx.amount_cents = inv.amount_cents
         db.add(tx)

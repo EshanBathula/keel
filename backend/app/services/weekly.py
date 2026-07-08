@@ -5,6 +5,7 @@ points per business cycle means more signal for trend/seasonality detection
 and a meaningful rolling-origin backtest. User-facing reporting still happens
 at the monthly grain (see analytics.py) since that's what owners think in.
 """
+
 from collections import defaultdict
 from datetime import date, timedelta
 

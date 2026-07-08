@@ -5,7 +5,8 @@ many transactions never accumulates binary floating-point drift. Dollars —
 plain floats — exist only at the API boundary (request/response bodies) for
 human ergonomics; see docs/DECISIONS.md.
 """
-from decimal import Decimal, ROUND_HALF_UP
+
+from decimal import ROUND_HALF_UP, Decimal
 
 
 def to_cents(dollars) -> int:

@@ -2,6 +2,7 @@
 
 All settings can be overridden with environment variables (see .env.example).
 """
+
 from pydantic_settings import BaseSettings
 
 
@@ -13,6 +14,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24  # 24 hours
     cors_origins: str = "http://localhost:5173,http://localhost:4173"
+    log_level: str = "INFO"
 
     class Config:
         env_file = ".env"

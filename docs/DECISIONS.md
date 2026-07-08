@@ -3,6 +3,67 @@
 Judgment calls made during the v2 upgrade, and known issues found along the way.
 Newest first within each task.
 
+## Task 8 — Ops polish
+
+**Structured logging: hand-rolled JSON formatter, no dependency.** A ~30-line
+`logging.Formatter` subclass (`app/logging_config.py`) turns every log line —
+ours and uvicorn's access/error logs — into one JSON object with consistent
+`timestamp`/`level`/`logger`/`message` fields, plus anything passed via
+`extra={...}`. Considered `structlog`/`python-json-logger`; neither earns its
+weight for a format this simple, and it keeps faith with the project's
+existing "minimal dependencies" stance (same reasoning as auth's zero-
+heavyweight-deps design and Task 5's no-statsmodels call). Added a handful of
+real log statements where they matter operationally: startup, and
+auth security events (failed logins, rate-limit trips) — deliberately
+*not* a per-request logging middleware, since uvicorn's own (now
+JSON-structured) access log already covers that at no extra cost; a second,
+app-level copy of the same information would just be duplication.
+
+**Ruff added to CI required reformatting the entire backend.** `ruff check`
+surfaced 78 real issues on the first run — mostly `zip()` without
+`strict=` (8, all fixed to `strict=True`: every one of those zips pairs
+same-length lists by construction, so the stricter form is also the more
+correct one, not just the quieter one), a few `raise ... from None` fixes so
+translated validation errors don't hide their real cause, one lambda
+rewritten as a `def`, and import sorting. `ruff format --check` then wanted
+to reformat all 37 non-empty Python files — entirely mechanical whitespace
+(multi-line function signatures, one dict-key-per-line, a blank line after
+module docstrings), verified by diffing several files by hand before
+applying. Ran `ruff format .` once, confirmed all 76 tests still passed
+unchanged, and committed it as its own step rather than silently folding it
+into unrelated diffs. `B008` (function-call-in-default-argument) is disabled
+project-wide — it's a real anti-pattern in general Python but is exactly
+FastAPI's required `Depends()` pattern, so enabling it would mean either
+apologizing for 44 false positives forever or rewriting every router
+handler's signature to `Annotated[...]` for no behavioral change. `UP042`
+(prefer `enum.StrEnum`) is disabled too — `class X(str, Enum)` behaves
+identically for how `TxType`/`InvoiceStatus` are used (DB storage, JSON
+serialization) and changing base classes on two enums touching the schema
+layer wasn't worth it for a lint nit. Line length capped at 120 (vs. Ruff's
+88 default) to match the codebase's existing, wider style rather than
+rewrap every docstring and log line; `E501` itself is disabled since the
+formatter — not the linter — is what actually decides wrapping.
+
+**Doc sync.** README, `docs/API.md`, and `docs/ARCHITECTURE.md` were kept
+close to current throughout Tasks 1–7 (each task updated the sections it
+touched), so this pass was a full re-read for staleness rather than a
+rewrite: updated the README's feature list, stack table, and API-highlights
+block to reflect the forecast engine, insight rules, and ledger features
+shipped since v1.0; removed "scenario planning" from the roadmap now that
+it's shipped; added the `LOG_LEVEL` env var to both the config table and
+`.env.example`; and added the previously-undocumented modules
+(`rate_limit.py`, `logging_config.py`, `tz.py`, `routers/_util.py`,
+`pyproject.toml`) to the architecture doc's file tree and design-decisions
+list.
+
+### Known issues found (not yet fixed)
+
+- Log statements exist at the routers where security events happen (auth)
+  but not yet at the service layer for other notable events (e.g. an
+  invoice transitioning to `paid`, a CSV import's error count). Auth was
+  prioritized as the highest-value, lowest-noise signal; broader service-
+  layer logging is a reasonable follow-up if operators ask for it.
+
 ## Task 7 — Frontend robustness
 
 **Two error boundaries, not one.** An outer one wraps the entire `<Routes>`

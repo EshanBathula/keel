@@ -1,9 +1,12 @@
 """Rolling-origin backtest math (hand-computed) and model selection on
 synthetic series where the correct winner is knowable in advance."""
+
 import math
 
 from app.services.forecast.backtest import (
-    aggregate_error_pct, select_best_model, signed_residuals,
+    aggregate_error_pct,
+    select_best_model,
+    signed_residuals,
 )
 
 
@@ -28,7 +31,9 @@ def test_signed_residuals_expanding_window_never_sees_future():
     #   i=3: train=[1,2,3] -> predict 3, actual 4 -> residual 1
     #   i=4: train=[1..4]  -> predict 4, actual 5 -> residual 1
     #   i=5: train=[1..5]  -> predict 5, actual 6 -> residual 1
-    naive = lambda train, horizon: [train[-1]] * horizon
+    def naive(train, horizon):
+        return [train[-1]] * horizon
+
     series = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
     assert signed_residuals(naive, series, holdout=3) == [1.0, 1.0, 1.0]
 
@@ -68,10 +73,7 @@ def test_selection_seasonal_series_picks_seasonal_naive():
     # Seasonal-naive nails each held-out week using last year's same week;
     # trend models can't represent the oscillation and must lose.
     noise = [((i * 37) % 13) - 6 for i in range(200)]
-    series = [
-        1000 + 400 * math.sin(2 * math.pi * (i % 52) / 52) + noise[i]
-        for i in range(70)
-    ]
+    series = [1000 + 400 * math.sin(2 * math.pi * (i % 52) / 52) + noise[i] for i in range(70)]
     name, residuals = select_best_model(series)
     assert name == "seasonal_naive"
     assert len(residuals) == 8

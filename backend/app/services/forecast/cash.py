@@ -8,6 +8,7 @@ into the statistical forecast) is what makes the projection "cash-aware, not
 just revenue-aware" — see docs/DECISIONS.md for why double-counting is a
 real risk here, not just a tidiness concern.
 """
+
 from collections import defaultdict
 from datetime import date, timedelta
 
@@ -60,7 +61,10 @@ def _user_default_rate(stats: dict[int, tuple[float, float]]) -> float:
 
 
 def scheduled_invoice_cash_cents(
-    db: Session, user_id: int, week_starts: list[date], today: date | None = None,
+    db: Session,
+    user_id: int,
+    week_starts: list[date],
+    today: date | None = None,
 ) -> dict[date, int]:
     """Expected-value cash contribution per future week from currently unpaid
     invoices (status sent/overdue), keyed by week_start.

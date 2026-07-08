@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -9,6 +11,7 @@ from ..models import User
 from ..rate_limit import login_limiter, register_limiter
 from ..schemas import Token, UserCreate, UserOut, UserUpdate
 
+logger = logging.getLogger("app.auth")
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
@@ -24,24 +27,34 @@ def _client_key(request: Request) -> str:
 @router.post("/register", response_model=Token, status_code=201)
 def register(payload: UserCreate, request: Request, db: Session = Depends(get_db)):
     if not register_limiter.allow(_client_key(request)):
+        logger.warning("Registration rate limit exceeded", extra={"client": _client_key(request)})
         raise HTTPException(429, "Too many registration attempts. Try again later.")
     if db.scalar(select(User).where(User.email == payload.email)):
         raise HTTPException(409, "An account with this email already exists")
-    user = User(email=payload.email, password_hash=hash_password(payload.password),
-                business_name=payload.business_name, timezone=payload.timezone)
+    user = User(
+        email=payload.email,
+        password_hash=hash_password(payload.password),
+        business_name=payload.business_name,
+        timezone=payload.timezone,
+    )
     db.add(user)
     db.commit()
     db.refresh(user)
+    logger.info("User registered", extra={"user_id": user.id})
     return Token(access_token=create_access_token(user.id), user=UserOut.model_validate(user))
 
 
 @router.post("/login", response_model=Token)
 def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
     if not login_limiter.allow(_client_key(request)):
+        logger.warning("Login rate limit exceeded", extra={"client": _client_key(request)})
         raise HTTPException(429, "Too many login attempts. Try again later.")
     user = db.scalar(select(User).where(User.email == payload.email))
     if not user or not verify_password(payload.password, user.password_hash):
+        # Never log the submitted email/password — only that an attempt failed.
+        logger.warning("Failed login attempt", extra={"client": _client_key(request)})
         raise HTTPException(401, "Invalid email or password")
+    logger.info("User logged in", extra={"user_id": user.id})
     return Token(access_token=create_access_token(user.id), user=UserOut.model_validate(user))
 
 
@@ -51,8 +64,7 @@ def me(user: User = Depends(get_current_user)):
 
 
 @router.patch("/me", response_model=UserOut)
-def update_me(payload: UserUpdate, db: Session = Depends(get_db),
-             user: User = Depends(get_current_user)):
+def update_me(payload: UserUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(user, field, value)
     db.commit()

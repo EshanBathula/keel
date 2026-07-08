@@ -1,0 +1,15 @@
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = [
+    "E501",  # line length is enforced by the formatter, not the linter
+    "B008",  # FastAPI's `Depends()` in a default argument IS the framework's DI pattern
+    "UP042", # keep `class X(str, Enum)`, not StrEnum — behaves identically for our use, smaller diff
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]

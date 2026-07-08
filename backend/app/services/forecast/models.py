@@ -6,6 +6,7 @@
 point forecast for each of the next `horizon` weeks. Pure Python throughout —
 no NumPy/pandas/statsmodels — see docs/DECISIONS.md for why.
 """
+
 import math
 
 SEASONAL_PERIOD_WEEKS = 52
@@ -80,7 +81,7 @@ def damped_trend(train: list[float], horizon: int) -> list[float]:
     out = []
     phi_power_sum = 0.0
     for h in range(1, horizon + 1):
-        phi_power_sum += phi ** h
+        phi_power_sum += phi**h
         out.append(level + phi_power_sum * trend)
     return out
 
@@ -96,7 +97,7 @@ def _ols(values: list[float]) -> tuple[float, float]:
     mean_x = sum(xs) / n
     mean_y = sum(values) / n
     denom = sum((x - mean_x) ** 2 for x in xs)
-    slope = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, values)) / denom if denom else 0.0
+    slope = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, values, strict=True)) / denom if denom else 0.0
     return slope, mean_y - slope * mean_x
 
 

@@ -15,6 +15,12 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install -r backend/requirements.txt
+      - name: Lint (ruff check)
+        working-directory: backend
+        run: ruff check .
+      - name: Format check (ruff format)
+        working-directory: backend
+        run: ruff format --check .
       - name: Run tests
         working-directory: backend
         run: python -m pytest tests/ -v

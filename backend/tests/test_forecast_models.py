@@ -1,8 +1,12 @@
 """Unit tests for the three candidate models and the percentile helper.
 Expected values are hand-computed.
 """
+
 from app.services.forecast.models import (
-    damped_trend, ols_ma_blend, percentile, seasonal_naive,
+    damped_trend,
+    ols_ma_blend,
+    percentile,
+    seasonal_naive,
 )
 
 

@@ -17,16 +17,20 @@
 
 ```
 backend/app/
-├── main.py          FastAPI app assembly, CORS
-├── config.py        Pydantic settings (env-overridable)
-├── database.py      Engine/session, declarative base
-├── auth.py          PBKDF2 hashing, JWT issue/verify, current-user dependency
-├── models.py        User, Customer, Transaction, Invoice
-├── money.py         Dollar <-> integer-cents conversion (Decimal-based)
-├── schemas.py       Request/response models
-├── seed.py          Demo data generator (12 months, realistic seasonality)
-├── routers/         Thin HTTP layer — validation + auth, no business logic
-└── services/        All business logic, unit-testable without HTTP
+├── main.py           FastAPI app assembly, CORS, lifespan/startup logging
+├── config.py         Pydantic settings (env-overridable) + prod JWT-secret guard
+├── database.py       Engine/session, declarative base
+├── auth.py           PBKDF2 hashing, JWT issue/verify, current-user dependency
+├── rate_limit.py     In-memory sliding-window limiter (login/register)
+├── logging_config.py Structured (JSON) logging for the app + uvicorn
+├── tz.py             User-local "today" resolution for month/day boundaries
+├── models.py         User, Customer, Transaction, Invoice
+├── money.py          Dollar <-> integer-cents conversion (Decimal-based)
+├── schemas.py        Request/response models
+├── seed.py           Demo data generator (12 months, realistic seasonality)
+├── routers/          Thin HTTP layer — validation + auth, no business logic
+│   └── _util.py        Shared validation (e.g. cross-tenant ownership checks)
+└── services/         All business logic, unit-testable without HTTP
     ├── analytics.py   Monthly series, KPIs, health score, breakdowns
     ├── weekly.py      Weekly transaction aggregation (modeling substrate)
     ├── insights.py    Rule engine producing prioritized recommendations
@@ -36,7 +40,8 @@ backend/app/
         ├── cash.py      Unpaid-invoice cash overlay (payment-behavior weighted)
         └── engine.py    Orchestration, bands, alerts, scenario planner
 
-backend/alembic/     Schema migrations (see "Database migrations" in README)
+backend/alembic/      Schema migrations (see "Database migrations" in README)
+backend/pyproject.toml  Ruff lint + format configuration
 ```
 
 **Design decisions**
@@ -51,8 +56,18 @@ backend/alembic/     Schema migrations (see "Database migrations" in README)
   PyJWT. Swappable for OAuth later without touching routers (only the dependency).
 - **SQLite by default, PostgreSQL by env var.** The ORM layer is dialect-agnostic;
   set `DATABASE_URL` and deploy.
-- **Invoices drive revenue.** Marking an invoice paid emits an income transaction,
-  so receivables and the P&L can never drift apart.
+- **Invoices drive revenue.** Marking an invoice paid emits an income transaction
+  (and stamps `paid_date`, which drives the forecast's payment-behavior weighting
+  and the late-payer insight), so receivables and the P&L can never drift apart.
+- **"Today" follows the user's timezone, not the server's.** `tz.py::user_today()`
+  is used everywhere a month/day boundary matters (KPIs, forecast, insights,
+  invoice overdue-flagging) instead of the server's local clock.
+- **Auth is rate-limited and fails closed in production.** Login/registration use
+  an in-memory sliding-window limiter (`rate_limit.py`); startup refuses to run
+  with `ENV=production` and the default `JWT_SECRET` (`config.py`).
+- **Logs are structured JSON**, for both the app's own logger and uvicorn's
+  access/error logs (`logging_config.py`) — one JSON object per line, no
+  external logging dependency.
 
 ## The health score
 

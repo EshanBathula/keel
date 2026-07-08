@@ -5,6 +5,7 @@ that week and asked for a genuine 1-step-ahead forecast — never fit with
 hindsight on the value it's predicting. This is what makes it a fair proxy
 for how the model will perform on next week's real, unseen data.
 """
+
 from .models import CANDIDATES
 
 HOLDOUT_WEEKS = 8
@@ -23,8 +24,9 @@ def signed_residuals(model_fn, series: list[float], holdout: int = HOLDOUT_WEEKS
 AGG_WEEKS = 4
 
 
-def aggregate_error_pct(model_fn, series: list[float], agg_weeks: int = AGG_WEEKS,
-                        holdout: int = HOLDOUT_WEEKS) -> float | None:
+def aggregate_error_pct(
+    model_fn, series: list[float], agg_weeks: int = AGG_WEEKS, holdout: int = HOLDOUT_WEEKS
+) -> float | None:
     """Walk-forward relative error of `agg_weeks`-week SUMS — the error of what
     the user actually reads (monthly totals), not of individual weeks.
 
@@ -42,7 +44,7 @@ def aggregate_error_pct(model_fn, series: list[float], agg_weeks: int = AGG_WEEK
     errs, actuals = [], []
     for i in range(first, n - agg_weeks + 1):
         pred = sum(model_fn(series[:i], horizon=agg_weeks))
-        actual = sum(series[i:i + agg_weeks])
+        actual = sum(series[i : i + agg_weeks])
         errs.append(abs(pred - actual))
         actuals.append(actual)
     mean_actual = sum(actuals) / len(actuals)

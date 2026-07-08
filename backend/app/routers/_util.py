@@ -1,4 +1,5 @@
 """Small validation helpers shared across routers."""
+
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 

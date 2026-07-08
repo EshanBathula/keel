@@ -1,4 +1,5 @@
 """Unit tests for weekly bucketing helpers. Expected values are hand-computed."""
+
 from datetime import date
 
 from app.services.weekly import add_months, week_start

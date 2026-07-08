@@ -4,6 +4,7 @@ cash timing, actionable outputs, scenario math, and honesty guards.
 These go through the API (like test_api.py) so they exercise the full
 router -> engine -> DB path.
 """
+
 from datetime import date, timedelta
 
 import pytest
@@ -17,10 +18,16 @@ def seed_weekly_history(client, auth, weeks=20, revenue=1000.0, expenses=400.0):
     monday = week_start(date.today())
     for w in range(1, weeks + 1):
         d = str(monday - timedelta(weeks=w))
-        client.post("/api/transactions", headers=auth, json={
-            "type": "income", "amount": revenue, "category": "Services", "date": d})
-        client.post("/api/transactions", headers=auth, json={
-            "type": "expense", "amount": expenses, "category": "Ops", "date": d})
+        client.post(
+            "/api/transactions",
+            headers=auth,
+            json={"type": "income", "amount": revenue, "category": "Services", "date": d},
+        )
+        client.post(
+            "/api/transactions",
+            headers=auth,
+            json={"type": "expense", "amount": expenses, "category": "Ops", "date": d},
+        )
 
 
 def get_forecast(client, auth, horizon=3):
@@ -79,9 +86,18 @@ def test_unpaid_invoice_lands_in_due_week(client, auth):
     base = get_forecast(client, auth)
 
     due = date.today() + timedelta(days=30)
-    client.post("/api/invoices", headers=auth, json={
-        "customer_id": c["id"], "number": "INV-CASH-1", "amount": 5000,
-        "status": "sent", "issue_date": str(date.today()), "due_date": str(due)})
+    client.post(
+        "/api/invoices",
+        headers=auth,
+        json={
+            "customer_id": c["id"],
+            "number": "INV-CASH-1",
+            "amount": 5000,
+            "status": "sent",
+            "issue_date": str(date.today()),
+            "due_date": str(due),
+        },
+    )
 
     with_invoice = get_forecast(client, auth)
 
@@ -90,7 +106,7 @@ def test_unpaid_invoice_lands_in_due_week(client, auth):
     # ...and no cash lands before the due week (weeks strictly before the
     # due week must match the baseline).
     due_week = str(week_start(due))
-    for b, w in zip(base["weekly"], with_invoice["weekly"]):
+    for b, w in zip(base["weekly"], with_invoice["weekly"], strict=True):
         assert b["week_start"] == w["week_start"]
         if w["week_start"] < due_week:
             assert w["cash_p50"] == pytest.approx(b["cash_p50"], abs=1.0)
@@ -104,26 +120,42 @@ def test_paid_history_drives_on_time_weighting(client, auth):
     c = client.post("/api/customers", headers=auth, json={"name": "Prompt Co"}).json()
 
     # Build an on-time payment record: due in the future, paid today.
-    inv = client.post("/api/invoices", headers=auth, json={
-        "customer_id": c["id"], "number": "INV-H1", "amount": 100, "status": "sent",
-        "issue_date": str(date.today() - timedelta(days=10)),
-        "due_date": str(date.today() + timedelta(days=5))}).json()
+    inv = client.post(
+        "/api/invoices",
+        headers=auth,
+        json={
+            "customer_id": c["id"],
+            "number": "INV-H1",
+            "amount": 100,
+            "status": "sent",
+            "issue_date": str(date.today() - timedelta(days=10)),
+            "due_date": str(date.today() + timedelta(days=5)),
+        },
+    ).json()
     r = client.patch(f"/api/invoices/{inv['id']}", headers=auth, json={"status": "paid"})
     assert r.json()["paid_date"] == str(date.today())
 
     base = get_forecast(client, auth)
     due = date.today() + timedelta(days=21)
-    client.post("/api/invoices", headers=auth, json={
-        "customer_id": c["id"], "number": "INV-H2", "amount": 2600, "status": "sent",
-        "issue_date": str(date.today()), "due_date": str(due)})
+    client.post(
+        "/api/invoices",
+        headers=auth,
+        json={
+            "customer_id": c["id"],
+            "number": "INV-H2",
+            "amount": 2600,
+            "status": "sent",
+            "issue_date": str(date.today()),
+            "due_date": str(due),
+        },
+    )
     f = get_forecast(client, auth)
 
     # 100% on-time rate -> full 2600 lands in the due week: find that week's
     # cash jump vs. baseline.
     due_week = str(week_start(due))
     jumps = {
-        w["week_start"]: round(w["cash_p50"] - b["cash_p50"])
-        for b, w in zip(base["weekly"], f["weekly"])
+        w["week_start"]: round(w["cash_p50"] - b["cash_p50"]) for b, w in zip(base["weekly"], f["weekly"], strict=True)
     }
     # Weeks before the due week: no jump. Due week onward: +2600.
     for wk, jump in jumps.items():
@@ -137,14 +169,13 @@ def test_scenario_revenue_change_math(client, auth):
     seed_weekly_history(client, auth, weeks=20, revenue=1000.0, expenses=0.0)
     base = get_forecast(client, auth)
 
-    r = client.post("/api/analytics/scenario?horizon=3", headers=auth,
-                    json={"monthly_revenue_change_pct": 10})
+    r = client.post("/api/analytics/scenario?horizon=3", headers=auth, json={"monthly_revenue_change_pct": 10})
     assert r.status_code == 200, r.text
     scen = r.json()
 
     # +10% on organic revenue -> each monthly projected_revenue scales by
     # 1.10 exactly (no invoices exist to dilute the ratio).
-    for b, s in zip(base["monthly"], scen["monthly"]):
+    for b, s in zip(base["monthly"], scen["monthly"], strict=True):
         assert s["projected_revenue"] == pytest.approx(b["projected_revenue"] * 1.10, rel=0.001)
 
 
@@ -154,8 +185,11 @@ def test_scenario_new_expense_math(client, auth):
 
     # A new $4,000/month expense starting next month.
     start = f"{date.today().year + (date.today().month == 12)}-{(date.today().month % 12) + 1:02d}"
-    r = client.post("/api/analytics/scenario?horizon=3", headers=auth,
-                    json={"new_monthly_expense_cents": 400000, "start_month": start})
+    r = client.post(
+        "/api/analytics/scenario?horizon=3",
+        headers=auth,
+        json={"new_monthly_expense_cents": 400000, "start_month": start},
+    )
     assert r.status_code == 200, r.text
     scen = r.json()
 
@@ -175,8 +209,11 @@ def test_scenario_new_expense_math(client, auth):
 
 
 def test_scenario_rejects_bad_start_month(client, auth):
-    r = client.post("/api/analytics/scenario", headers=auth,
-                    json={"new_monthly_expense_cents": 100000, "start_month": "September 2026"})
+    r = client.post(
+        "/api/analytics/scenario",
+        headers=auth,
+        json={"new_monthly_expense_cents": 100000, "start_month": "September 2026"},
+    )
     assert r.status_code == 422
 
 

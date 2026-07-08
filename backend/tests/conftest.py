@@ -1,4 +1,5 @@
 """Shared fixtures for API-level tests."""
+
 import os
 from datetime import date
 
@@ -7,8 +8,8 @@ os.environ["DATABASE_URL"] = "sqlite:///./test_keel.db"
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app
 from app.database import Base, engine
+from app.main import app
 from app.rate_limit import login_limiter, register_limiter
 
 
@@ -28,8 +29,10 @@ def client():
 
 @pytest.fixture
 def auth(client):
-    r = client.post("/api/auth/register", json={
-        "email": "owner@example.com", "password": "supersecret1", "business_name": "Test Co"})
+    r = client.post(
+        "/api/auth/register",
+        json={"email": "owner@example.com", "password": "supersecret1", "business_name": "Test Co"},
+    )
     assert r.status_code == 201, r.text
     token = r.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}

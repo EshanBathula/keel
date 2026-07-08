@@ -1,8 +1,9 @@
 """Authentication: PBKDF2 password hashing + JWT bearer tokens."""
+
 import hashlib
 import hmac
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import jwt
 from fastapi import Depends, HTTPException, status
@@ -33,7 +34,7 @@ def verify_password(password: str, stored: str) -> bool:
 
 
 def create_access_token(user_id: int) -> str:
-    expires = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
+    expires = datetime.now(UTC) + timedelta(minutes=settings.access_token_expire_minutes)
     payload = {"sub": str(user_id), "exp": expires}
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
@@ -53,7 +54,7 @@ def get_current_user(
         payload = jwt.decode(credentials.credentials, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
         user_id = int(payload["sub"])
     except (jwt.PyJWTError, KeyError, ValueError):
-        raise unauthorized
+        raise unauthorized from None
     user = db.get(User, user_id)
     if user is None:
         raise unauthorized

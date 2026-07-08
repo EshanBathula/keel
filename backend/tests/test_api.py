@@ -1,4 +1,5 @@
 """End-to-end API tests against an in-memory SQLite database."""
+
 from datetime import date, timedelta
 
 import pytest
@@ -24,9 +25,17 @@ def test_requires_auth(client):
 
 
 def test_transaction_crud_and_isolation(client, auth):
-    r = client.post("/api/transactions", headers=auth, json={
-        "type": "income", "amount": 1200.5, "category": "Services",
-        "description": "Consulting", "date": str(date.today())})
+    r = client.post(
+        "/api/transactions",
+        headers=auth,
+        json={
+            "type": "income",
+            "amount": 1200.5,
+            "category": "Services",
+            "description": "Consulting",
+            "date": str(date.today()),
+        },
+    )
     assert r.status_code == 201
     tx_id = r.json()["id"]
 
@@ -45,9 +54,17 @@ def test_transaction_crud_and_isolation(client, auth):
 
 
 def test_transaction_update(client, auth):
-    tx = client.post("/api/transactions", headers=auth, json={
-        "type": "expense", "amount": 100, "category": "Software",
-        "description": "Old", "date": str(date.today())}).json()
+    tx = client.post(
+        "/api/transactions",
+        headers=auth,
+        json={
+            "type": "expense",
+            "amount": 100,
+            "category": "Software",
+            "description": "Old",
+            "date": str(date.today()),
+        },
+    ).json()
 
     r = client.patch(f"/api/transactions/{tx['id']}", headers=auth, json={"amount": 150.25, "category": "Tools"})
     assert r.status_code == 200
@@ -65,30 +82,56 @@ def test_transaction_update(client, auth):
 
 
 def test_transaction_update_rejects_other_users_customer(client, auth):
-    tx = client.post("/api/transactions", headers=auth, json={
-        "type": "income", "amount": 100, "category": "Services", "date": str(date.today())}).json()
+    tx = client.post(
+        "/api/transactions",
+        headers=auth,
+        json={"type": "income", "amount": 100, "category": "Services", "date": str(date.today())},
+    ).json()
     r2 = client.post("/api/auth/register", json={"email": "stranger@example.com", "password": "supersecret1"})
     other_auth = {"Authorization": f"Bearer {r2.json()['access_token']}"}
     other_customer = client.post("/api/customers", headers=other_auth, json={"name": "Not Yours"}).json()
 
-    r = client.patch(f"/api/transactions/{tx['id']}", headers=auth,
-                     json={"customer_id": other_customer["id"]})
+    r = client.patch(f"/api/transactions/{tx['id']}", headers=auth, json={"customer_id": other_customer["id"]})
     assert r.status_code == 400
 
-    r = client.post("/api/transactions", headers=auth, json={
-        "type": "income", "amount": 50, "category": "Services", "date": str(date.today()),
-        "customer_id": other_customer["id"]})
+    r = client.post(
+        "/api/transactions",
+        headers=auth,
+        json={
+            "type": "income",
+            "amount": 50,
+            "category": "Services",
+            "date": str(date.today()),
+            "customer_id": other_customer["id"],
+        },
+    )
     assert r.status_code == 400
 
 
 def test_transaction_filters_and_pagination(client, auth):
     for i in range(5):
-        client.post("/api/transactions", headers=auth, json={
-            "type": "expense", "amount": 10 + i, "category": "Software",
-            "description": f"Tool {i}", "date": str(date.today() - timedelta(days=i))})
-    client.post("/api/transactions", headers=auth, json={
-        "type": "income", "amount": 500, "category": "Services",
-        "description": "Client work", "date": str(date.today())})
+        client.post(
+            "/api/transactions",
+            headers=auth,
+            json={
+                "type": "expense",
+                "amount": 10 + i,
+                "category": "Software",
+                "description": f"Tool {i}",
+                "date": str(date.today() - timedelta(days=i)),
+            },
+        )
+    client.post(
+        "/api/transactions",
+        headers=auth,
+        json={
+            "type": "income",
+            "amount": 500,
+            "category": "Services",
+            "description": "Client work",
+            "date": str(date.today()),
+        },
+    )
 
     page1 = client.get("/api/transactions?limit=2&offset=0", headers=auth).json()
     assert page1["total"] == 6
@@ -104,8 +147,8 @@ def test_transaction_filters_and_pagination(client, auth):
     assert by_text["total"] == 1 and by_text["items"][0]["description"] == "Client work"
 
     by_range = client.get(
-        f"/api/transactions?date_from={date.today() - timedelta(days=1)}&date_to={date.today()}",
-        headers=auth).json()
+        f"/api/transactions?date_from={date.today() - timedelta(days=1)}&date_to={date.today()}", headers=auth
+    ).json()
     assert by_range["total"] == 3  # expenses at i=0 (today) and i=1 (yesterday), plus today's income
 
 
@@ -116,8 +159,7 @@ def test_csv_import(client, auth):
         "01/15/2026,expense,120.75,Software,Tools\n"
         "not-a-date,income,50,Misc,bad row\n"
     )
-    r = client.post("/api/transactions/import", headers=auth,
-                    files={"file": ("data.csv", csv_data, "text/csv")})
+    r = client.post("/api/transactions/import", headers=auth, files={"file": ("data.csv", csv_data, "text/csv")})
     assert r.status_code == 201
     body = r.json()
     assert body["created"] == 2
@@ -126,10 +168,16 @@ def test_csv_import(client, auth):
 
 def test_kpis_and_monthly(client, auth):
     for offset, rev, exp in [(-2, 1000, 600), (-1, 1500, 700), (0, 2000, 800)]:
-        client.post("/api/transactions", headers=auth, json={
-            "type": "income", "amount": rev, "category": "Sales", "date": month_str(offset)})
-        client.post("/api/transactions", headers=auth, json={
-            "type": "expense", "amount": exp, "category": "Ops", "date": month_str(offset)})
+        client.post(
+            "/api/transactions",
+            headers=auth,
+            json={"type": "income", "amount": rev, "category": "Sales", "date": month_str(offset)},
+        )
+        client.post(
+            "/api/transactions",
+            headers=auth,
+            json={"type": "expense", "amount": exp, "category": "Ops", "date": month_str(offset)},
+        )
     k = client.get("/api/analytics/kpis", headers=auth).json()
     assert k["revenue_this_month"] == 2000
     assert k["revenue_last_month"] == 1500
@@ -150,8 +198,7 @@ def test_login_rate_limited_after_five_attempts(client, auth):
 
 def test_register_rate_limited_after_five_attempts(client):
     for i in range(5):
-        r = client.post("/api/auth/register", json={
-            "email": f"user{i}@example.com", "password": "supersecret1"})
+        r = client.post("/api/auth/register", json={"email": f"user{i}@example.com", "password": "supersecret1"})
         assert r.status_code == 201
     r = client.post("/api/auth/register", json={"email": "one-more@example.com", "password": "supersecret1"})
     assert r.status_code == 429
@@ -161,26 +208,39 @@ def test_money_sums_without_float_drift(client, auth):
     # 0.10 + 0.20 + 0.30 famously equals 0.6000000000000001 in binary floats.
     # With cents storage the sum must land on exactly 0.6.
     for amt in (0.10, 0.20, 0.30):
-        client.post("/api/transactions", headers=auth, json={
-            "type": "income", "amount": amt, "category": "Misc", "date": str(date.today())})
+        client.post(
+            "/api/transactions",
+            headers=auth,
+            json={"type": "income", "amount": amt, "category": "Misc", "date": str(date.today())},
+        )
     k = client.get("/api/analytics/kpis", headers=auth).json()
     assert k["revenue_this_month"] == 0.6
 
 
 def test_transaction_amount_rounds_to_nearest_cent(client, auth):
-    r = client.post("/api/transactions", headers=auth, json={
-        "type": "income", "amount": 19.999999999998, "category": "Services",
-        "date": str(date.today())})
+    r = client.post(
+        "/api/transactions",
+        headers=auth,
+        json={"type": "income", "amount": 19.999999999998, "category": "Services", "date": str(date.today())},
+    )
     assert r.status_code == 201
     assert r.json()["amount"] == 20.0
 
 
 def test_invoice_paid_creates_income(client, auth):
     c = client.post("/api/customers", headers=auth, json={"name": "Acme"}).json()
-    inv = client.post("/api/invoices", headers=auth, json={
-        "customer_id": c["id"], "number": "INV-1", "amount": 750,
-        "status": "sent", "issue_date": str(date.today() - timedelta(days=10)),
-        "due_date": str(date.today() + timedelta(days=20))}).json()
+    inv = client.post(
+        "/api/invoices",
+        headers=auth,
+        json={
+            "customer_id": c["id"],
+            "number": "INV-1",
+            "amount": 750,
+            "status": "sent",
+            "issue_date": str(date.today() - timedelta(days=10)),
+            "due_date": str(date.today() + timedelta(days=20)),
+        },
+    ).json()
     r = client.patch(f"/api/invoices/{inv['id']}", headers=auth, json={"status": "paid"})
     assert r.status_code == 200
     txs = client.get("/api/transactions", headers=auth).json()["items"]
@@ -192,9 +252,18 @@ def test_invoice_rejects_other_users_customer(client, auth):
     other_auth = {"Authorization": f"Bearer {r2.json()['access_token']}"}
     other_customer = client.post("/api/customers", headers=other_auth, json={"name": "Not Yours"}).json()
 
-    r = client.post("/api/invoices", headers=auth, json={
-        "customer_id": other_customer["id"], "number": "INV-2", "amount": 500,
-        "status": "sent", "issue_date": str(date.today()), "due_date": str(date.today() + timedelta(days=30))})
+    r = client.post(
+        "/api/invoices",
+        headers=auth,
+        json={
+            "customer_id": other_customer["id"],
+            "number": "INV-2",
+            "amount": 500,
+            "status": "sent",
+            "issue_date": str(date.today()),
+            "due_date": str(date.today() + timedelta(days=30)),
+        },
+    )
     assert r.status_code == 400
 
 
@@ -210,10 +279,17 @@ def test_user_timezone_update_and_validation(client, auth):
 
 
 def test_overdue_autoflag_and_insights(client, auth):
-    client.post("/api/invoices", headers=auth, json={
-        "number": "INV-9", "amount": 999, "status": "sent",
-        "issue_date": str(date.today() - timedelta(days=45)),
-        "due_date": str(date.today() - timedelta(days=15))})
+    client.post(
+        "/api/invoices",
+        headers=auth,
+        json={
+            "number": "INV-9",
+            "amount": 999,
+            "status": "sent",
+            "issue_date": str(date.today() - timedelta(days=45)),
+            "due_date": str(date.today() - timedelta(days=15)),
+        },
+    )
     invoices = client.get("/api/invoices", headers=auth).json()
     assert invoices[0]["status"] == "overdue"
     ins = client.get("/api/analytics/insights", headers=auth).json()

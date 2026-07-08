@@ -1,11 +1,12 @@
 """Pydantic schemas (request/response models)."""
+
 import datetime as dt
-from datetime import date, datetime
+from datetime import date
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
-from .models import TxType, InvoiceStatus
+from .models import InvoiceStatus, TxType
 
 
 def _validate_iana_timezone(v: str | None) -> str | None:
@@ -14,7 +15,7 @@ def _validate_iana_timezone(v: str | None) -> str | None:
     try:
         ZoneInfo(v)
     except (ZoneInfoNotFoundError, ValueError):
-        raise ValueError(f"Unknown timezone: {v!r}")
+        raise ValueError(f"Unknown timezone: {v!r}") from None
     return v
 
 
@@ -188,7 +189,7 @@ class ScenarioRequest(BaseModel):
             if not (1 <= int(month) <= 12) or len(year) != 4:
                 raise ValueError
         except ValueError:
-            raise ValueError(f"start_month must be 'YYYY-MM', got {v!r}")
+            raise ValueError(f"start_month must be 'YYYY-MM', got {v!r}") from None
         return v
 
 

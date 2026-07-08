@@ -16,8 +16,7 @@ def list_customers(db: Session = Depends(get_db), user: User = Depends(get_curre
 
 
 @router.post("", response_model=CustomerOut, status_code=201)
-def create_customer(payload: CustomerCreate, db: Session = Depends(get_db),
-                    user: User = Depends(get_current_user)):
+def create_customer(payload: CustomerCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     c = Customer(user_id=user.id, **payload.model_dump())
     db.add(c)
     db.commit()
@@ -26,8 +25,7 @@ def create_customer(payload: CustomerCreate, db: Session = Depends(get_db),
 
 
 @router.delete("/{customer_id}", status_code=204)
-def delete_customer(customer_id: int, db: Session = Depends(get_db),
-                    user: User = Depends(get_current_user)):
+def delete_customer(customer_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     c = db.get(Customer, customer_id)
     if not c or c.user_id != user.id:
         raise HTTPException(404, "Customer not found")

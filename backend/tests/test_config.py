@@ -1,4 +1,5 @@
 """Unit tests for the production JWT-secret guard."""
+
 import pytest
 
 from app.config import Settings, _check_production_secret

@@ -7,13 +7,14 @@ invoice-cash overlay -> empirical-quantile cash bands -> actionable outputs
 
 See docs/DECISIONS.md for the reasoning behind each design choice below.
 """
+
 import math
 from datetime import date, timedelta
 
 from sqlalchemy.orm import Session
 
-from ..analytics import approx_cash_balance_cents, avg_monthly_burn_cents, month_key
 from ...money import to_dollars
+from ..analytics import approx_cash_balance_cents, avg_monthly_burn_cents, month_key
 from ..weekly import add_months, week_start, weekly_series_cents
 from .backtest import aggregate_error_pct, select_best_model
 from .cash import scheduled_invoice_cash_cents
@@ -60,8 +61,11 @@ def _project_series(history: list[float], model_name: str, horizon: int) -> list
 
 
 def _weekly_bands(
-    point_series: list[float], residuals: list[float], confidence: str,
-    cumulative: bool, base: float = 0.0,
+    point_series: list[float],
+    residuals: list[float],
+    confidence: str,
+    cumulative: bool,
+    base: float = 0.0,
 ) -> tuple[list[float], list[float], list[float]]:
     """Per-week P10/P50/P90 from empirical backtest-residual quantiles,
     widening as sqrt(h) to reflect growing uncertainty over the horizon (the
@@ -98,8 +102,11 @@ def _weekly_bands(
 
 
 def _monthly_rollup(
-    week_starts: list[date], rev_point: list[float], rev_p10: list[float],
-    rev_p90: list[float], exp_point: list[float],
+    week_starts: list[date],
+    rev_point: list[float],
+    rev_p10: list[float],
+    rev_p90: list[float],
+    exp_point: list[float],
 ) -> list[dict]:
     buckets: dict[str, dict] = {}
     order = []
@@ -139,10 +146,13 @@ def _cash_low_alert(p10_curve: list[float], week_starts: list[date], buffer_cent
 
 
 def _safe_to_spend(
-    p10_curve: list[float], week_starts: list[date], today: date, buffer_cents: float,
+    p10_curve: list[float],
+    week_starts: list[date],
+    today: date,
+    buffer_cents: float,
 ) -> float:
     cutoff = today + timedelta(days=SAFE_TO_SPEND_DAYS)
-    window = [bal for w, bal in zip(week_starts, p10_curve) if w <= cutoff]
+    window = [bal for w, bal in zip(week_starts, p10_curve, strict=True) if w <= cutoff]
     if not window:
         return 0.0
     return to_dollars(round(max(0.0, min(window) - buffer_cents)))
@@ -168,30 +178,44 @@ def _baseline_projection(db: Session, user_id: int, today: date, horizon_months:
     expected_error_pct = aggregate_error_pct(CANDIDATES[rev_model], organic_rev_hist)
 
     return {
-        "confidence": confidence, "rev_model": rev_model, "exp_model": exp_model,
-        "rev_residuals": rev_residuals, "exp_residuals": exp_residuals,
-        "week_starts": week_starts, "organic_rev_point": organic_rev_point,
-        "exp_point": exp_point, "expected_error_pct": expected_error_pct,
+        "confidence": confidence,
+        "rev_model": rev_model,
+        "exp_model": exp_model,
+        "rev_residuals": rev_residuals,
+        "exp_residuals": exp_residuals,
+        "week_starts": week_starts,
+        "organic_rev_point": organic_rev_point,
+        "exp_point": exp_point,
+        "expected_error_pct": expected_error_pct,
     }
 
 
 def _assemble_response(
-    db: Session, user_id: int, today: date, week_starts: list[date],
-    organic_rev_point: list[float], exp_point: list[float],
-    rev_model: str, exp_model: str, rev_residuals: list[float], exp_residuals: list[float],
-    confidence: str, expected_error_pct: float | None,
+    db: Session,
+    user_id: int,
+    today: date,
+    week_starts: list[date],
+    organic_rev_point: list[float],
+    exp_point: list[float],
+    rev_model: str,
+    exp_model: str,
+    rev_residuals: list[float],
+    exp_residuals: list[float],
+    confidence: str,
+    expected_error_pct: float | None,
 ) -> dict:
     horizon_weeks = len(week_starts)
     invoice_cash = scheduled_invoice_cash_cents(db, user_id, week_starts, today=today)
     total_rev_point = [organic_rev_point[i] + invoice_cash.get(week_starts[i], 0) for i in range(horizon_weeks)]
     net_point = [total_rev_point[i] - exp_point[i] for i in range(horizon_weeks)]
     net_residuals = (
-        [r - e for r, e in zip(rev_residuals, exp_residuals)] if rev_residuals and exp_residuals else []
+        [r - e for r, e in zip(rev_residuals, exp_residuals, strict=True)] if rev_residuals and exp_residuals else []
     )
 
     starting_cash = approx_cash_balance_cents(db, user_id, today=today)
     p10_cash, p50_cash, p90_cash = _weekly_bands(
-        net_point, net_residuals, confidence, cumulative=True, base=starting_cash)
+        net_point, net_residuals, confidence, cumulative=True, base=starting_cash
+    )
     rev_p10, _, rev_p90 = _weekly_bands(total_rev_point, rev_residuals, confidence, cumulative=False)
 
     monthly = _monthly_rollup(week_starts, total_rev_point, rev_p10, rev_p90, exp_point)
@@ -229,18 +253,29 @@ def forecast(db: Session, user_id: int, horizon_months: int = 6, today: date | N
     today = today or date.today()
     b = _baseline_projection(db, user_id, today, horizon_months)
     return _assemble_response(
-        db, user_id, today, b["week_starts"], b["organic_rev_point"], b["exp_point"],
-        b["rev_model"], b["exp_model"], b["rev_residuals"], b["exp_residuals"],
-        b["confidence"], b["expected_error_pct"],
+        db,
+        user_id,
+        today,
+        b["week_starts"],
+        b["organic_rev_point"],
+        b["exp_point"],
+        b["rev_model"],
+        b["exp_model"],
+        b["rev_residuals"],
+        b["exp_residuals"],
+        b["confidence"],
+        b["expected_error_pct"],
     )
 
 
 def scenario(
-    db: Session, user_id: int,
+    db: Session,
+    user_id: int,
     monthly_revenue_change_pct: float | None = None,
     new_monthly_expense_cents: int | None = None,
     start_month: str | None = None,
-    horizon_months: int = 6, today: date | None = None,
+    horizon_months: int = 6,
+    today: date | None = None,
 ) -> dict:
     today = today or date.today()
     b = _baseline_projection(db, user_id, today, horizon_months)
@@ -255,11 +290,20 @@ def scenario(
         weekly_add = new_monthly_expense_cents * 12 / 52
         exp_point = [
             max(0.0, v + weekly_add) if month_key(w) >= start_month else v
-            for v, w in zip(exp_point, b["week_starts"])
+            for v, w in zip(exp_point, b["week_starts"], strict=True)
         ]
 
     return _assemble_response(
-        db, user_id, today, b["week_starts"], organic_rev_point, exp_point,
-        b["rev_model"], b["exp_model"], b["rev_residuals"], b["exp_residuals"],
-        b["confidence"], b["expected_error_pct"],
+        db,
+        user_id,
+        today,
+        b["week_starts"],
+        organic_rev_point,
+        exp_point,
+        b["rev_model"],
+        b["exp_model"],
+        b["rev_residuals"],
+        b["exp_residuals"],
+        b["confidence"],
+        b["expected_error_pct"],
     )

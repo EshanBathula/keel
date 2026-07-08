@@ -1,11 +1,12 @@
 """Core financial analytics: monthly series, KPIs, and the Keel health score."""
+
 from collections import defaultdict
 from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import Transaction, Invoice, TxType, InvoiceStatus
+from ..models import Invoice, InvoiceStatus, Transaction, TxType
 from ..money import to_dollars
 
 
@@ -39,17 +40,18 @@ def monthly_series_cents(db: Session, user_id: int, months: int = 12, today: dat
         else:
             exp[k] += tx.amount_cents
 
-    return [
-        {"month": k, "revenue_cents": rev[k], "expenses_cents": exp[k], "net_cents": rev[k] - exp[k]}
-        for k in keys
-    ]
+    return [{"month": k, "revenue_cents": rev[k], "expenses_cents": exp[k], "net_cents": rev[k] - exp[k]} for k in keys]
 
 
 def monthly_series(db: Session, user_id: int, months: int = 12, today: date | None = None) -> list[dict]:
     """Dollar-denominated monthly series for API responses."""
     return [
-        {"month": p["month"], "revenue": to_dollars(p["revenue_cents"]),
-         "expenses": to_dollars(p["expenses_cents"]), "net": to_dollars(p["net_cents"])}
+        {
+            "month": p["month"],
+            "revenue": to_dollars(p["revenue_cents"]),
+            "expenses": to_dollars(p["expenses_cents"]),
+            "net": to_dollars(p["net_cents"]),
+        }
         for p in monthly_series_cents(db, user_id, months=months, today=today)
     ]
 
@@ -91,10 +93,10 @@ def compute_kpis(db: Session, user_id: int, today: date | None = None) -> dict:
     runway = round(max(cash_cents, 0) / avg_burn_cents, 1) if avg_burn_cents > 0 else None
 
     invoices = db.scalars(select(Invoice).where(Invoice.user_id == user_id)).all()
-    outstanding_cents = sum(
-        i.amount_cents for i in invoices if i.status in (InvoiceStatus.sent, InvoiceStatus.overdue))
+    outstanding_cents = sum(i.amount_cents for i in invoices if i.status in (InvoiceStatus.sent, InvoiceStatus.overdue))
     overdue_cents = sum(
-        i.amount_cents for i in invoices
+        i.amount_cents
+        for i in invoices
         if i.status == InvoiceStatus.overdue or (i.status == InvoiceStatus.sent and i.due_date < today)
     )
 
@@ -145,18 +147,27 @@ def health_score(series, margin, growth, outstanding_cents, overdue_cents, runwa
             score -= 10
 
     score_int = int(max(0, min(100, round(score))))
-    grade = ("A" if score_int >= 85 else "B" if score_int >= 70 else
-             "C" if score_int >= 55 else "D" if score_int >= 40 else "F")
+    grade = (
+        "A"
+        if score_int >= 85
+        else "B"
+        if score_int >= 70
+        else "C"
+        if score_int >= 55
+        else "D"
+        if score_int >= 40
+        else "F"
+    )
     return score_int, grade
 
 
-def category_breakdown(db: Session, user_id: int, tx_type: TxType, months: int = 12,
-                       today: date | None = None) -> list[dict]:
+def category_breakdown(
+    db: Session, user_id: int, tx_type: TxType, months: int = 12, today: date | None = None
+) -> list[dict]:
     today = today or date.today()
     cutoff_key = shift_month(month_key(today), -(months - 1))
     totals: dict[str, int] = defaultdict(int)
-    txs = db.scalars(select(Transaction).where(
-        Transaction.user_id == user_id, Transaction.type == tx_type)).all()
+    txs = db.scalars(select(Transaction).where(Transaction.user_id == user_id, Transaction.type == tx_type)).all()
     for tx in txs:
         if month_key(tx.date) >= cutoff_key:
             totals[tx.category] += tx.amount_cents
@@ -169,8 +180,7 @@ def category_breakdown(db: Session, user_id: int, tx_type: TxType, months: int =
 def top_customers(db: Session, user_id: int, limit: int = 5) -> list[dict]:
     totals: dict[int, int] = defaultdict(int)
     names: dict[int, str] = {}
-    txs = db.scalars(select(Transaction).where(
-        Transaction.user_id == user_id, Transaction.type == TxType.income)).all()
+    txs = db.scalars(select(Transaction).where(Transaction.user_id == user_id, Transaction.type == TxType.income)).all()
     for tx in txs:
         if tx.customer_id and tx.customer:
             totals[tx.customer_id] += tx.amount_cents
@@ -178,7 +188,6 @@ def top_customers(db: Session, user_id: int, limit: int = 5) -> list[dict]:
     ranked = sorted(totals.items(), key=lambda kv: -kv[1])[:limit]
     grand_cents = sum(totals.values()) or 1
     return [
-        {"customer_id": cid, "name": names[cid], "revenue": to_dollars(v),
-         "share_pct": round(v / grand_cents * 100, 1)}
+        {"customer_id": cid, "name": names[cid], "revenue": to_dollars(v), "share_pct": round(v / grand_cents * 100, 1)}
         for cid, v in ranked
     ]

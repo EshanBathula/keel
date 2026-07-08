@@ -80,7 +80,9 @@ Sent invoices past their due date are auto-flagged `overdue` on read.
 ```json
 { "status": "paid" }
 ```
-Transitioning to `paid` automatically records an income transaction for the amount.
+Transitioning to `paid` automatically records an income transaction for the
+amount and stamps `paid_date` (used to compute each customer's on-time
+payment rate for the forecast and the late-payer insight).
 
 ## Analytics
 

@@ -2,7 +2,7 @@ import csv
 import io
 from datetime import date, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -41,15 +41,14 @@ def list_transactions(
         stmt = stmt.where(or_(Transaction.description.ilike(like), Transaction.category.ilike(like)))
 
     total = db.scalar(select(func.count()).select_from(stmt.subquery()))
-    items = db.scalars(
-        stmt.order_by(Transaction.date.desc(), Transaction.id.desc()).limit(limit).offset(offset)
-    ).all()
+    items = db.scalars(stmt.order_by(Transaction.date.desc(), Transaction.id.desc()).limit(limit).offset(offset)).all()
     return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
 @router.post("", response_model=TransactionOut, status_code=201)
-def create_transaction(payload: TransactionCreate, db: Session = Depends(get_db),
-                       user: User = Depends(get_current_user)):
+def create_transaction(
+    payload: TransactionCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+):
     ensure_customer_owned(db, user.id, payload.customer_id)
     tx = Transaction(user_id=user.id, **payload.model_dump())
     db.add(tx)
@@ -59,8 +58,9 @@ def create_transaction(payload: TransactionCreate, db: Session = Depends(get_db)
 
 
 @router.patch("/{tx_id}", response_model=TransactionOut)
-def update_transaction(tx_id: int, payload: TransactionUpdate, db: Session = Depends(get_db),
-                       user: User = Depends(get_current_user)):
+def update_transaction(
+    tx_id: int, payload: TransactionUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+):
     tx = db.get(Transaction, tx_id)
     if not tx or tx.user_id != user.id:
         raise HTTPException(404, "Transaction not found")
@@ -75,8 +75,7 @@ def update_transaction(tx_id: int, payload: TransactionUpdate, db: Session = Dep
 
 
 @router.delete("/{tx_id}", status_code=204)
-def delete_transaction(tx_id: int, db: Session = Depends(get_db),
-                       user: User = Depends(get_current_user)):
+def delete_transaction(tx_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     tx = db.get(Transaction, tx_id)
     if not tx or tx.user_id != user.id:
         raise HTTPException(404, "Transaction not found")
@@ -85,8 +84,9 @@ def delete_transaction(tx_id: int, db: Session = Depends(get_db),
 
 
 @router.post("/import", status_code=201)
-async def import_csv(file: UploadFile = File(...), db: Session = Depends(get_db),
-                     user: User = Depends(get_current_user)):
+async def import_csv(
+    file: UploadFile = File(...), db: Session = Depends(get_db), user: User = Depends(get_current_user)
+):
     """Import transactions from CSV with columns: date,type,amount,category,description.
 
     Dates accept YYYY-MM-DD or MM/DD/YYYY. Type must be `income` or `expense`.
@@ -109,11 +109,16 @@ async def import_csv(file: UploadFile = File(...), db: Session = Depends(get_db)
             amount = abs(float(row.get("amount") or 0))
             if amount <= 0:
                 raise ValueError("amount must be non-zero")
-            db.add(Transaction(
-                user_id=user.id, type=tx_type, amount=amount, date=tx_date,
-                category=(row.get("category") or "Uncategorized").strip() or "Uncategorized",
-                description=(row.get("description") or "").strip(),
-            ))
+            db.add(
+                Transaction(
+                    user_id=user.id,
+                    type=tx_type,
+                    amount=amount,
+                    date=tx_date,
+                    category=(row.get("category") or "Uncategorized").strip() or "Uncategorized",
+                    description=(row.get("description") or "").strip(),
+                )
+            )
             created += 1
         except (ValueError, KeyError) as e:
             errors.append(f"line {i}: {e}")

@@ -5,6 +5,7 @@ on restart or across workers. That's an accepted tradeoff for a self-hosted
 app with one backend process (see docs/DECISIONS.md) — a multi-instance
 deployment would need a shared store (e.g. Redis) instead.
 """
+
 import time
 from collections import defaultdict, deque
 
